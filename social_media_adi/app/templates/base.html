@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CircleUp | {% block title %}Connect & Share{% endblock %}</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Bootstrap & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="{% static 'css/insta_style.css' %}">
+    
+    <style>
+        .nav-logo-text { font-family: 'Inter', sans-serif; font-weight: 800; font-size: 1.5rem; background: linear-gradient(135deg, #FF0080 0%, #FF8C00 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-link-icon { font-size: 1.5rem; color: #262626; transition: transform 0.2s ease; }
+        .nav-avatar { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #dbdbdb; }
+        .modern-nav { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); border-bottom: 1px solid #dbdbdb; height: 60px; }
+        .nav-container { max-width: 975px; margin: 0 auto; padding: 0 20px; height: 100%; }
+        main { max-width: 935px; margin: 0 auto; }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Top Modern Navigation -->
+    <nav class="modern-nav sticky-top">
+        <div class="nav-container d-flex justify-content-between align-items-center">
+            <a href="{% url 'home' %}" class="text-decoration-none d-flex align-items-center">
+                <span class="nav-logo-text">CircleUp</span>
+            </a>
+            
+            <div class="d-none d-md-block flex-grow-1 mx-5">
+                <form action="{% url 'search' %}" method="get">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" name="q" class="form-control bg-light border-0" placeholder="Search" style="padding: 6px 12px;">
+                    </div>
+                </form>
+            </div>
+
+            <div class="d-flex align-items-center gap-4">
+                <a href="{% url 'home' %}" title="Home"><i class="bi bi-house-door{% if request.path == '/' %}-fill{% endif %} nav-link-icon"></i></a>
+                <a href="{% url 'chat-list' %}" title="Messages" class="position-relative">
+                    <i class="bi bi-chat-dots{% if '/chats' in request.path %} active{% endif %} nav-link-icon"></i>
+                    {% if unread_messages_count and unread_messages_count > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                              style="font-size:9px; padding:3px 5px; min-width:16px;">
+                            {{ unread_messages_count }}
+                        </span>
+                    {% endif %}
+                </a>
+                <a href="#" data-bs-toggle="modal" data-bs-target="#create_modal" title="New Post"><i class="bi bi-plus-square nav-link-icon"></i></a>
+                <a href="{% url 'reels' %}" title="Reels"><i class="bi bi-play-btn{% if request.path == '/reels' %}-fill{% endif %} nav-link-icon"></i></a>
+                <a href="#" title="Explore"><i class="bi bi-compass nav-link-icon"></i></a>
+                <a href="{% url 'notifications' %}" title="Notifications" class="position-relative">
+                    <i class="bi bi-heart{% if request.path == '/notifications/' %}-fill{% endif %} nav-link-icon"></i>
+                    {% if pending_friend_requests_count > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                              style="font-size:9px; padding:3px 5px; min-width:16px;">
+                            {{ pending_friend_requests_count }}
+                        </span>
+                    {% endif %}
+                    {% if unread_messages_count and unread_messages_count > 0 %}
+                        <span class="position-absolute top-0 start-50 translate-middle p-1 bg-danger border border-light rounded-circle" style="width:10px; height:10px;"></span>
+                    {% endif %}
+                </a>
+                <a href="{% url 'profile' %}" class="d-flex align-items-center" title="Profile">
+                    {% if request.session.profile and request.session.profile != "None" %}
+                        <img src="http://127.0.0.1:8000/{{request.session.profile}}" alt="profile" class="nav-avatar">
+                    {% else %}
+                        <div class="nav-avatar bg-light d-flex align-items-center justify-content-center text-muted">
+                            <i class="bi bi-person"></i>
+                        </div>
+                    {% endif %}
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Create Post Modal -->
+    <div class="modal fade" id="create_modal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px;">
+                <div class="modal-header border-bottom py-2">
+                    <h6 class="modal-title w-100 text-center fw-bold">Create new post</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <form action="{% url 'create' %}" method="post" enctype="multipart/form-data" id="postForm">
+                        {% csrf_token %}
+                        <div class="p-5 text-center d-flex flex-column align-items-center" id="uploadArea">
+                            <i class="bi bi-images" style="font-size: 4rem; color: #ced4da;"></i>
+                            <p class="fs-5 mt-3">Drag photos here</p>
+                            <label for="image-upload" class="btn btn-primary btn-sm px-3" style="border-radius: 8px;">Select from computer</label>
+                            <input type="file" id="image-upload" name="img" class="d-none" accept="image/*,video/*" required onchange="previewMedia(this)">
+                        </div>
+                        <div id="imagePreview" class="d-none w-100 border-top">
+                            <img src="" id="previewImg" class="w-100 object-fit-cover d-none" style="max-height: 400px;">
+                            <video id="previewVid" class="w-100 d-none" controls style="max-height: 400px; background: black;"></video>
+                            <div class="p-3">
+                                <textarea name="caption" class="form-control border-0 shadow-none mb-2" rows="3" placeholder="Write a caption..." style="resize: none;"></textarea>
+                                <div class="d-flex gap-4">
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" name="is_story" id="isStorySwitch">
+                                        <label class="form-check-label small text-muted" for="isStorySwitch">Post as Story</label>
+                                    </div>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" name="is_reel" id="isReelSwitch">
+                                        <label class="form-check-label small text-muted" for="isReelSwitch">Post as Reel</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer border-top p-2 d-none" id="modalFooter">
+                    <button type="submit" form="postForm" class="btn btn-link text-decoration-none fw-bold w-100" id="shareBtn">Share</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function previewMedia(input) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                const fileType = file.type;
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    $('#uploadArea').addClass('d-none');
+                    $('#imagePreview').removeClass('d-none');
+                    $('#modalFooter').removeClass('d-none');
+                    
+                    if (fileType.startsWith('image/')) {
+                        $('#previewImg').attr('src', e.target.result).removeClass('d-none');
+                        $('#previewVid').addClass('d-none');
+                        $('#isReelSwitch').prop('checked', false);
+                    } else if (fileType.startsWith('video/')) {
+                        $('#previewVid').attr('src', e.target.result).removeClass('d-none');
+                        $('#previewImg').addClass('d-none');
+                        $('#isReelSwitch').prop('checked', true);
+                    }
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

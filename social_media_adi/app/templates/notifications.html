@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0" style="border-radius: 12px;">
+            <div class="card-header bg-white border-bottom py-3 px-4">
+                <h5 class="fw-bold mb-0">Notifications</h5>
+            </div>
+            <div class="card-body p-0">
+
+                {% if pending_requests %}
+                    <div class="px-4 pt-3 pb-1">
+                        <p class="text-muted small fw-bold text-uppercase" style="letter-spacing: 0.5px;">
+                            Follow Requests
+                            <span class="badge bg-danger ms-1">{{ pending_count }}</span>
+                        </p>
+                    </div>
+
+                    {% for req in pending_requests %}
+                    <div class="d-flex align-items-center px-4 py-3 border-bottom">
+                        <!-- Avatar -->
+                        <a href="{% url 'view_profile' req.from_user.username %}" class="text-decoration-none me-3">
+                            {% with prof=req.from_user.profile_set.first %}
+                            {% if prof and prof.pic and prof.pic != "None" %}
+                                <img src="http://127.0.0.1:8000/{{ prof.pic }}"
+                                     style="width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid #dbdbdb;">
+                            {% else %}
+                                <div style="width:44px;height:44px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;border:1px solid #dbdbdb;">
+                                    <i class="bi bi-person text-muted fs-5"></i>
+                                </div>
+                            {% endif %}
+                            {% endwith %}
+                        </a>
+
+                        <!-- Info -->
+                        <div class="flex-grow-1">
+                            <a href="{% url 'view_profile' req.from_user.username %}" class="text-decoration-none text-dark fw-bold">
+                                {{ req.from_user.username }}
+                            </a>
+                            <div class="text-muted small">wants to follow you.</div>
+                            <div class="text-muted" style="font-size:11px;">
+                                {{ req.created|timesince }} ago
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-flex gap-2 ms-3">
+                            <a href="{% url 'accept_friend_request' req.id %}?next={% url 'notifications' %}"
+                               class="btn btn-primary btn-sm fw-bold px-3">
+                                Confirm
+                            </a>
+                            <a href="{% url 'reject_friend_request' req.id %}?next={% url 'notifications' %}"
+                               class="btn btn-outline-secondary btn-sm fw-bold px-3">
+                                Delete
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-bell-slash fs-1 text-muted"></i>
+                        <p class="mt-3 text-muted">No new notifications.</p>
+                        <p class="text-muted small">When someone sends you a follow request, it will appear here.</p>
+                    </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

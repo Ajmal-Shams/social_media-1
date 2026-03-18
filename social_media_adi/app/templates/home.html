@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Home{% endblock %}
+
+{% block extra_css %}
+<style>
+    .story-ring {
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        padding: 2px;
+        background: linear-gradient(135deg, #FF0080 0%, #FF8C00 100%);
+        display: inline-block;
+    }
+    .story-img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        border: 2px solid white;
+        object-fit: cover;
+    }
+    .post-card {
+        border: 1px solid #dbdbdb;
+        border-radius: 8px;
+        background: white;
+        margin-bottom: 20px;
+    }
+    .post-header {
+        padding: 12px 16px;
+    }
+    .post-image-container img {
+        width: 100%;
+        max-height: 600px;
+        object-fit: contain;
+        background-color: #efefef;
+    }
+    .post-footer {
+        padding: 12px 16px;
+    }
+    .action-icon {
+        font-size: 1.5rem;
+        cursor: pointer;
+        margin-right: 12px;
+        transition: color 0.1s ease;
+    }
+    .action-icon:hover { color: #8e8e8e; }
+    .bi-heart-fill { color: #ed4956; }
+    
+    .comment-input-container {
+        border-top: 1px solid #efefef;
+        padding: 12px 16px;
+    }
+    .comment-input {
+        border: none;
+        resize: none;
+        outline: none;
+        width: 100%;
+        font-size: 14px;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .extra-small { font-size: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if issues %}
+    <div class="alert alert-danger shadow-sm border-0 rounded-3 mb-4 d-flex align-items-center">
+        <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
+        <span><strong>Account Restricted:</strong> You've been blocked due to hate speech detection. Please remove toxic comments to restore functionality.</span>
+    </div>
+{% endif %}
+<div class="row pt-4">
+    <!-- Main Feed -->
+    <div class="col-lg-8">
+        {% if issues %}
+        <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm" role="alert" style="background: rgba(237, 73, 86, 0.1); color: #ed4956;">
+            <i class="bi bi-exclamation-octagon-fill me-2"></i>
+            <strong>Post Blocked!</strong> Your caption contains potentially toxic or offensive content. Please maintain a safe and friendly environment.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+        
+        {% if request.session.notification %}
+        <div class="alert alert-warning alert-dismissible fade show border-0 shadow-sm" role="alert" style="background: rgba(255, 133, 27, 0.1); color: #FF851B;">
+            <i class="bi bi-shield-exclamation me-2"></i>
+            <strong>Safety Tip:</strong> Your comment was flagged for sensitive content. Continued use of offensive language may lead to account restrictions.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close" onclick="{% if not request.session.notification %}{% endif %}"></button>
+        </div>
+        {% endif %}
+        <!-- Stories -->
+        <div class="d-flex gap-3 overflow-x-auto pb-4 mb-2 no-scrollbar">
+            <div class="text-center" style="min-width: 74px;">
+                <div class="story-ring">
+                    {% if request.session.profile and request.session.profile != "None" %}
+                        <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="story-img">
+                    {% else %}
+                        <div class="story-img bg-light d-flex align-items-center justify-content-center text-muted">
+                            <i class="bi bi-person"></i>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="small mt-1 text-truncate">Your Story</div>
+            </div>
+            {% for story in stories %}
+            <div class="text-center" style="min-width: 74px;">
+                <div class="story-ring">
+                    {% with prof=story.user.profile_set.first %}
+                    {% if prof and prof.pic and prof.pic != "None" %}
+                        <img src="http://127.0.0.1:8000/{{prof.pic}}" class="story-img">
+                    {% else %}
+                        <div class="story-img bg-light d-flex align-items-center justify-content-center text-muted border border-white" style="border-width: 2px !important;">
+                            <i class="bi bi-person fs-4"></i>
+                        </div>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                <div class="small mt-1 text-truncate">{{ story.user.username }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Posts -->
+        <div class="posts">
+            {% for post in db %}
+            <article class="post-card shadow-sm">
+                <header class="post-header d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <img src="https://ui-avatars.com/api/?name={{ post.user.username }}&background=random" class="nav-avatar" style="width: 32px; height: 32px;">
+                        <span class="fw-bold">{{ post.user.username }}</span>
+                    </div>
+                    {% if post.user == request.user %}
+                    <div class="dropdown">
+                        <i class="bi bi-three-dots cursor-pointer" data-bs-toggle="dropdown"></i>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editPostModal{{ post.id }}">Edit Caption</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger fw-bold" href="{% url 'delete_post' post.id %}" onclick="return confirm('Are you sure you want to delete this post?')">Delete</a></li>
+                        </ul>
+                    </div>
+                    {% endif %}
+                </header>
+
+                <div class="post-image-container">
+                    {% if post.is_reel %}
+                        <video src="http://127.0.0.1:8000/{{ post.image_path }}" class="w-100" controls style="max-height: 600px; background: black;"></video>
+                    {% else %}
+                        <img src="http://127.0.0.1:8000/{{ post.image_path }}" alt="Post Content">
+                    {% endif %}
+                </div>
+
+                <div class="post-footer">
+                    <div class="d-flex mb-2">
+                        <i class="bi bi-heart{% if request.user in post.likes.all %}-fill{% endif %} action-icon" onclick="likePost('{{ post.id }}', this)"></i>
+                        <i class="bi bi-chat action-icon" data-bs-toggle="modal" data-bs-target="#commentModal{{ post.id }}"></i>
+                        <i class="bi bi-send action-icon"></i>
+                    </div>
+                    <div class="fw-bold mb-1"><span id="likes-count-{{ post.id }}">{{ post.like_count }}</span> likes</div>
+                    <div>
+                        <span class="fw-bold me-1">{{ post.user.username }}</span>
+                        <span>{{ post.text }}</span>
+                    </div>
+                    {% if post.comments.count > 0 %}
+                    <div class="text-muted mt-2 cursor-pointer small" data-bs-toggle="modal" data-bs-target="#commentModal{{ post.id }}">
+                        View all {{ post.comments.count }} comments
+                    </div>
+                    {% endif %}
+                </div>
+
+                <form class="comment-input-container d-flex" method="post" action="{% url 'add_comment' post.id %}">
+                    {% csrf_token %}
+                    <textarea name="comment" class="comment-input" rows="1" placeholder="Add a comment..."></textarea>
+                    <button type="submit" class="btn btn-link text-decoration-none fw-bold p-0 ms-2" style="font-size: 14px;">Post</button>
+                </form>
+            </article>
+
+            <!-- Comment Modal -->
+            <div class="modal fade" id="commentModal{{ post.id }}" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content overflow-hidden" style="border-radius: 4px;">
+                        <div class="row g-0" style="min-height: 500px;">
+                            <div class="col-md-7 border-end bg-black d-flex align-items-center">
+                                <img src="http://127.0.0.1:8000/{{ post.image_path }}" class="img-fluid w-100">
+                            </div>
+                            <div class="col-md-5 d-flex flex-column">
+                                <div class="p-3 border-bottom fw-bold">{{ post.user.username }}</div>
+                                <div class="flex-grow-1 p-3 overflow-y-auto" style="max-height: 400px;">
+                                    {% for comment in post.comments.all %}
+                                    <div class="mb-3 d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <span class="fw-bold me-2">{{ comment.user.username }}</span>
+                                            <span>{{ comment.text }}</span>
+                                            {% if comment.score > 0.5 %}
+                                            <div class="small text-danger"><i class="bi bi-exclamation-triangle"></i> Flagged</div>
+                                            {% endif %}
+                                        </div>
+                                        {% if comment.user == request.user %}
+                                        <a href="{% url 'delete_comment' comment.id %}" class="text-muted small"><i class="bi bi-trash"></i></a>
+                                        {% endif %}
+                                    </div>
+                                    {% empty %}
+                                    <div class="text-muted text-center mt-5">No comments yet.</div>
+                                    {% endfor %}
+                                </div>
+                                <div class="p-3 border-top">
+                                    <form method="post" action="{% url 'add_comment' post.id %}" class="d-flex">
+                                        {% csrf_token %}
+                                        <input type="text" name="comment" class="form-control border-0 shadow-none" placeholder="Add a comment...">
+                                        <button class="btn btn-link text-decoration-none fw-bold">Post</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4 d-none d-lg-block">
+        <div class="sticky-top" style="top: 90px;">
+            <div class="d-flex align-items-center gap-3 mb-4">
+                <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="nav-avatar" style="width: 56px; height: 56px;">
+                <div>
+                    <div class="fw-bold">{{ user.username }}</div>
+                    <div class="text-muted small">{{ user.first_name }} {{ user.last_name }}</div>
+                </div>
+                <a href="{% url 'logout' %}" class="btn btn-link text-decoration-none fw-bold ms-auto small">Switch</a>
+            </div>
+
+            <div class="d-flex justify-content-between mb-3">
+                <span class="text-muted fw-bold small">Suggestions for you</span>
+                <a href="#" class="text-dark text-decoration-none small fw-bold">See All</a>
+            </div>
+
+            {% for suggest in suggestions %}
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <a href="{% url 'view_profile' suggest.username %}" class="text-decoration-none">
+                    <img src="https://ui-avatars.com/api/?name={{ suggest.username }}&background=random" class="nav-avatar" style="width: 32px; height: 32px;">
+                </a>
+                <div>
+                    <a href="{% url 'view_profile' suggest.username %}" class="text-decoration-none text-dark fw-bold small">{{ suggest.username }}</a>
+                    <div class="text-muted extra-small">Suggested for you</div>
+                </div>
+                <a href="{% url 'send_friend_request' suggest.id %}"
+                   class="btn btn-link text-decoration-none fw-bold ms-auto extra-small p-0"
+                   style="color: #0095f6;">Follow</a>
+            </div>
+            {% endfor %}
+
+            <div class="mt-5 extra-small text-muted">
+                About · Help · Press · API · Jobs · Privacy · Terms
+                <br><br>
+                © 2024 CIRCLEUP FROM META
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    {% if toxic_blocked %}
+    alert("Blocked: Your content was flagged as highly toxic and has been removed. Your safety score has been penalized.");
+    {% endif %}
+    {% if issues %}
+    alert("Warning: Your content was flagged for potentially harmful language. Your safety score has been updated.");
+    {% endif %}
+</script>
+{% endblock %}

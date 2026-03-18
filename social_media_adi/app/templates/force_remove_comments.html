@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Remove Comments - CircleUp</title>
+    <link rel="stylesheet" href="{% static 'sass/vender/bootstrap.css' %}">
+    <link rel="stylesheet" href="{% static 'sass/vender/bootstrap.min.css' %}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="{% url 'home' %}">CircleUp - Report Control</a>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="alert alert-danger text-center fw-bold">
+            🚨 You have flagged comments with high toxicity. Please remove them to continue using CircleUp.
+        </div>
+
+        <div class="mb-4 text-center">
+            <h5>Your Current Score: <span class="badge bg-info text-dark">{{ profile_score }}</span></h5>
+        </div>
+
+        <table class="table table-striped table-hover mt-4">
+            <thead class="table-dark">
+                <tr>
+                    <th scope="col">User</th>
+                    <th scope="col">Post Owner</th>
+                    <th scope="col">Comment</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Post</th>
+                    <th scope="col">Image</th>
+                    <th scope="col">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for k in db %}
+                <tr>
+                    <td>{{ k.user.username }}</td>
+                    <td>{{ k.post.user.username }}</td>
+                    <td>{{ k.text }}</td>
+                    <td>{{ k.score|floatformat:2 }}</td>
+                    <td>{{ k.post.id }}</td>
+                    <td>
+                        {% if k.post.image_path %}
+                            <img src="/{{ k.post.image_path }}" alt="Post Image" width="100">
+                        {% else %}
+                            No image
+                        {% endif %}
+                    </td>
+                    <td><a href="force-remove-comments/{{ k.id }}" class="btn btn-danger">Delete</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="text-center mt-4">
+            <a href="{% url 'login' %}" class="btn btn-primary">
+                🔙 Back to Login
+            </a>
+        </div>
+    </div>
+</body>
+</html>

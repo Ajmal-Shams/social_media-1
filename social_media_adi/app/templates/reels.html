@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+{% block title %}Reels | CircleUp{% endblock %}
+
+{% block content %}
+<style>
+    body { background-color: #000; }
+    .modern-nav { background: rgba(0, 0, 0, 0.9) !important; border-bottom: 1px solid #333 !important; }
+    .nav-logo-text { background: linear-gradient(135deg, #FF0080 0%, #FF8C00 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .nav-link-icon { color: #fff !important; }
+    
+    .reels-wrapper {
+        display: flex;
+        justify-content: center;
+        background: #000;
+        margin-top: -24px; /* Adjust for main padding */
+    }
+    
+    .reels-container {
+        height: calc(100vh - 60px);
+        overflow-y: scroll;
+        scroll-snap-type: y mandatory;
+        width: 100%;
+        max-width: 480px;
+        scrollbar-width: none;
+    }
+    .reels-container::-webkit-scrollbar { display: none; }
+    
+    .reel-item {
+        height: calc(100vh - 60px);
+        width: 100%;
+        scroll-snap-align: start;
+        position: relative;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .reel-video {
+        max-height: 100%;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+    }
+    
+    .reel-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 60px 20px 20px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.8));
+        color: white;
+        pointer-events: none;
+    }
+    .reel-overlay * { pointer-events: auto; }
+    
+    .reel-actions {
+        position: absolute;
+        right: 15px;
+        bottom: 40px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        color: white;
+        z-index: 10;
+    }
+    
+    .action-item { 
+        text-align: center; 
+        cursor: pointer; 
+        transition: transform 0.1s;
+    }
+    .action-item:active { transform: scale(0.9); }
+    .action-item i { font-size: 1.8rem; display: block; text-shadow: 0 0 10px rgba(0,0,0,0.5); }
+    .action-item span { font-size: 0.75rem; font-weight: 500; }
+    
+    .reel-info {
+        max-width: 80%;
+    }
+</style>
+
+<div class="reels-wrapper">
+    <div class="reels-container">
+        {% for reel in reels %}
+        <div class="reel-item" id="reel-{{ reel.id }}">
+            <video class="reel-video" loop muted playsinline onclick="togglePlay(this)">
+                <source src="http://127.0.0.1:8000/{{ reel.image_path }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            
+            <div class="reel-actions">
+                <div class="action-item" onclick="likeReel('{{ reel.id }}', this)">
+                    <i class="bi bi-heart{% if request.user in reel.likes.all %}-fill text-danger{% endif %} animate-heart"></i>
+                    <span>{{ reel.like_count }}</span>
+                </div>
+                <div class="action-item" data-bs-toggle="modal" data-bs-target="#commentModal{{ reel.id }}">
+                    <i class="bi bi-chat"></i>
+                    <span>{{ reel.comments.count }}</span>
+                </div>
+                <div class="action-item">
+                    <i class="bi bi-send"></i>
+                </div>
+                <div class="action-item">
+                    <i class="bi bi-three-dots"></i>
+                </div>
+                <div class="action-item mt-2">
+                    <img src="https://ui-avatars.com/api/?name={{ reel.user.username }}&background=random" class="rounded-1 border border-white" style="width: 30px; height: 30px;">
+                </div>
+            </div>
+
+            <div class="reel-overlay">
+                <div class="reel-info">
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <img src="https://ui-avatars.com/api/?name={{ reel.user.username }}&background=random" class="nav-avatar" style="width: 32px; height: 32px;">
+                        <span class="fw-bold">{{ reel.user.username }}</span>
+                        <button class="btn btn-outline-light btn-sm px-2 py-0 border-white fw-bold ms-2" style="font-size: 0.75rem;">Follow</button>
+                    </div>
+                    <p class="small mb-2">{{ reel.text }}</p>
+                    <div class="d-flex align-items-center gap-2 small opacity-75">
+                        <i class="bi bi-music-note-beamed"></i>
+                        <span>Original Audio - {{ reel.user.username }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Comment Modal for this Reel -->
+            <div class="modal fade" id="commentModal{{ reel.id }}" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content text-dark">
+                        <div class="modal-header">
+                            <h6 class="modal-title fw-bold">Comments</h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-0">
+                            <div class="p-3 overflow-y-auto" style="max-height: 400px;" id="comments-list-{{ reel.id }}">
+                                {% for comment in reel.comments.all %}
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <p class="small mb-0"><strong>{{ comment.user.username }}</strong> {{ comment.text }}</p>
+                                    {% if comment.user == request.user %}
+                                    <a href="{% url 'delete_comment' comment.id %}" class="text-muted extra-small"><i class="bi bi-trash"></i></a>
+                                    {% endif %}
+                                </div>
+                                {% empty %}
+                                <p class="text-muted text-center py-4">No comments yet.</p>
+                                {% endfor %}
+                            </div>
+                            <div class="p-3 border-top">
+                                <form action="{% url 'add_comment' reel.id %}" method="POST" class="d-flex gap-2">
+                                    {% csrf_token %}
+                                    <input type="text" name="comment" class="form-control form-control-sm border-0 shadow-none" placeholder="Add a comment...">
+                                    <button type="submit" class="btn btn-link btn-sm text-primary text-decoration-none fw-bold">Post</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="reel-item flex-column text-white">
+            <i class="bi bi-play-btn" style="font-size: 4rem; opacity: 0.3;"></i>
+            <p class="mt-3 opacity-50">No reels found</p>
+            <button class="btn btn-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#create_modal">Create Reel</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    function togglePlay(video) {
+        if (video.paused) {
+            video.play();
+        } else {
+            video.pause();
+        }
+    }
+
+    function likeReel(reelId, element) {
+        fetch(`/like-post/${reelId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const icon = element.querySelector('i');
+                const count = element.querySelector('span');
+                if (data.liked) {
+                    icon.classList.remove('bi-heart');
+                    icon.classList.add('bi-heart-fill', 'text-danger');
+                } else {
+                    icon.classList.remove('bi-heart-fill', 'text-danger');
+                    icon.classList.add('bi-heart');
+                }
+                count.innerText = data.likes;
+            }
+        });
+    }
+
+    // Auto-play / Auto-pause logic
+    const observerOptions = {
+        threshold: 0.7
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const video = entry.target.querySelector('video');
+            if (entry.isIntersecting) {
+                video.play().catch(e => console.log("Autoplay blocked:", e));
+            } else {
+                video.pause();
+                video.currentTime = 0;
+            }
+        });
+    }, observerOptions);
+
+    document.querySelectorAll('.reel-item').forEach(item => {
+        observer.observe(item);
+    });
+
+    // Handle session issues (toxiticy warning)
+    {% if request.session.issues %}
+        alert("Warning: Your content was flagged for potentially harmful language. Your safety score has been updated.");
+        {% if not request.user.is_authenticated %}
+            // If they were logged out or something, but usually handled by views
+        {% endif %}
+    {% endif %}
+</script>
+{% endblock %}

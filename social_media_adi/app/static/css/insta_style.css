@@ -1,0 +1,124 @@
+:root {
+    --primary-gradient: linear-gradient(135deg, #FF0080 0%, #FF8C00 100%);
+    --insta-blue: #0095f6;
+    --insta-dark-blue: #00376b;
+    --bg-light: #fafafa;
+    --border-color: #dbdbdb;
+    --text-primary: #262626;
+    --text-secondary: #8e8e8e;
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+}
+
+body {
+    background-color: var(--bg-light) !important;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+.modern-nav {
+    background: var(--glass-bg);
+    backdrop-filter: blur(15px);
+    border-bottom: 1px solid var(--border-color);
+    height: 60px;
+}
+
+.nav-container {
+    max-width: 975px;
+    margin: 0 auto;
+    padding: 0 20px;
+    height: 100%;
+}
+
+.nav-logo-text {
+    font-family: 'Inter', sans-serif;
+    font-weight: 800;
+    font-size: 1.5rem;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.nav-link-icon {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    transition: transform 0.2s ease;
+}
+
+.nav-link-icon:hover {
+    transform: scale(1.1);
+    color: var(--insta-blue);
+}
+
+.nav-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+}
+
+.nav-link-item.active .nav-link-icon {
+    color: var(--insta-blue);
+}
+
+/* Post Grid */
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+}
+
+.grid-item {
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+}
+
+.grid-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: filter 0.3s ease;
+}
+
+.grid-item:hover img {
+    filter: brightness(0.8);
+}
+
+.item-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    color: white;
+    transition: opacity 0.3s ease;
+    font-weight: 600;
+}
+
+.grid-item:hover .item-overlay {
+    opacity: 1;
+}
+
+/* Chat Layout */
+.chat-window {
+    height: calc(100vh - 100px);
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    display: flex;
+}
+
+/* Glassmorphism utility */
+.glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}

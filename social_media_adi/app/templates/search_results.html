@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Search Results for "{{ query }}"{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom-0 pt-4 px-4">
+                <h5 class="fw-bold">Search Results for "{{ query }}"</h5>
+            </div>
+            <div class="card-body px-0">
+                {% if results %}
+                    <div class="list-group list-group-flush">
+                        {% for u in results %}
+                            <div class="list-group-item border-0 py-3 px-4 d-flex align-items-center">
+                                <a href="{% url 'view_profile' u.username %}" class="text-decoration-none d-flex align-items-center flex-grow-1">
+                                    <img src="https://ui-avatars.com/api/?name={{ u.username }}&background=random" class="nav-avatar me-3" style="width: 44px; height: 44px;">
+                                    <div>
+                                        <div class="fw-bold text-dark">{{ u.username }}</div>
+                                        <div class="text-muted small">Suggested for you</div>
+                                    </div>
+                                </a>
+                                <a href="{% url 'view_profile' u.username %}" class="btn btn-primary btn-sm fw-bold px-3">View Profile</a>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-person-x fs-1 text-muted"></i>
+                        <p class="mt-3 text-muted">No users found matching "{{ query }}"</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

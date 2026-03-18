@@ -1,0 +1,15 @@
+{% extends 'home.html' %}
+{% block body %}
+<h1>Create Post</h1>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+    <div class="input-group mb-3">
+        <label class="input-group-text" for="inputGroupFile01">Upload</label>
+        <input type="file" name="img" class="form-control" id="inputGroupFile01">
+      </div>
+      <div class="input-group mb-3">
+        <label class="input-group-text" >Caption</label>
+        <input type="textarea" name="caption" class="form-control" id="inputGroupFile01">
+      </div>
+      <input type="submit" value="Post" class="btn btn-info">
+</form>
+{% endblock %}

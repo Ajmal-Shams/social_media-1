@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Chat with {{ friend.username }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chat-container {
+        background: white;
+        border: 1px solid #dbdbdb;
+        border-radius: 4px;
+        height: calc(100vh - 120px);
+        display: flex;
+    }
+    .user-list { width: 350px; border-right: 1px solid #dbdbdb; overflow-y: auto; }
+    .chat-area { flex-grow: 1; display: flex; flex-direction: column; }
+    
+    .chat-header { padding: 12px 20px; border-bottom: 1px solid #dbdbdb; }
+    .messages-box { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    
+    .message { max-width: 60%; padding: 8px 12px; border-radius: 22px; font-size: 14px; position: relative; }
+    .message.sent { align-self: flex-end; background-color: #efefef; color: #262626; border-bottom-right-radius: 4px; }
+    .message.received { align-self: flex-start; background: white; border: 1px solid #efefef; border-bottom-left-radius: 4px; }
+    
+    .toxic-warning { font-size: 10px; color: #ed4956; margin-top: 2px; }
+    
+    .chat-input-container { padding: 20px; }
+    .chat-input-wrapper { border: 1px solid #dbdbdb; border-radius: 22px; padding: 8px 16px; display: flex; align-items: center; }
+    .chat-input { border: none; outline: none; flex-grow: 1; font-size: 14px; }
+    
+    .user-item { padding: 8px 20px; cursor: pointer; text-decoration: none; color: inherit; display: flex; align-items: center; }
+    .user-item:hover { background-color: #fafafa; }
+    .user-item.active { background-color: #efefef; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-container shadow-sm mt-3">
+    <!-- Static Sidebar for context -->
+    <div class="user-list d-none d-md-block">
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold">{{ user.username }}</h6>
+        </div>
+        <div class="py-2">
+            <!-- This would normally be a separate component or include -->
+            <div class="user-item active">
+                <img src="https://ui-avatars.com/api/?name={{ friend.username }}&background=random" class="nav-avatar me-3" style="width: 56px; height: 56px;">
+                <div class="flex-grow-1">
+                    <div class="fw-bold">{{ friend.username }}</div>
+                    <div class="text-muted small">
+                        {% if friend_profile and friend_profile.last_seen %}
+                            {% if friend_profile.last_seen|timesince == '0 minutes' %}
+                                Active now
+                            {% else %}
+                                Active {{ friend_profile.last_seen|timesince }} ago
+                            {% endif %}
+                        {% else %}
+                            Unknown
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header d-flex align-items-center">
+            <img src="https://ui-avatars.com/api/?name={{ friend.username }}&background=random" class="nav-avatar me-2" style="width: 24px; height: 24px;">
+            <div class="fw-bold">{{ friend.username }}</div>
+            <i class="bi bi-info-circle ms-auto fs-5"></i>
+        </div>
+
+        <div class="messages-box no-scrollbar" id="messagesBox">
+            {% for message in messages %}
+            <div class="message {% if message.sender == request.user %}sent{% else %}received{% endif %}">
+                {{ message.text }}
+                {% if message.score > 0.5 %}
+                <div class="toxic-warning"><i class="bi bi-exclamation-triangle"></i> Flagged sensitive content</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="chat-input-container">
+            <form action="{% url 'send-message' friend.id %}" method="post">
+                {% csrf_token %}
+                <div class="chat-input-wrapper">
+                    <i class="bi bi-emoji-smile me-2 fs-5"></i>
+                    <input type="text" name="text" class="chat-input" placeholder="Message..." autocomplete="off">
+                    <button type="submit" class="btn btn-link text-decoration-none fw-bold p-0">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Scroll to bottom
+    const box = document.getElementById('messagesBox');
+    box.scrollTop = box.scrollHeight;
+</script>
+{% endblock %}
