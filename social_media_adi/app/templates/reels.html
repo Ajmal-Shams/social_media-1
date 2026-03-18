@@ -85,10 +85,24 @@
     <div class="reels-container">
         {% for reel in reels %}
         <div class="reel-item" id="reel-{{ reel.id }}">
-            <video class="reel-video" loop muted playsinline onclick="togglePlay(this)">
-                <source src="http://127.0.0.1:8000/{{ reel.image_path }}" type="video/mp4">
-                Your browser does not support the video tag.
+            {% if reel.is_video_file %}
+            <video class="reel-video" loop muted playsinline
+                   src="http://127.0.0.1:8000/{{ reel.image_path }}"
+                   onclick="togglePlay(this)"
+                   onerror="this.closest('.reel-item').querySelector('.reel-error').classList.remove('d-none')">
             </video>
+            <div class="reel-error d-none position-absolute text-white text-center" style="top:50%;left:50%;transform:translate(-50%,-50%);">
+                <i class="bi bi-exclamation-circle" style="font-size:2rem;"></i>
+                <p class="small mt-2">Unable to play this video.</p>
+            </div>
+            <!-- Mute/Unmute toggle -->
+            <button class="btn position-absolute text-white p-2" style="top:12px;right:12px;z-index:20;background:rgba(0,0,0,0.4);border-radius:50%;"
+                    onclick="toggleMute(this)" title="Toggle mute">
+                <i class="bi bi-volume-mute-fill"></i>
+            </button>
+            {% else %}
+            <img class="reel-video img-fluid" style="object-fit:cover; width:100%; height:100%;" src="http://127.0.0.1:8000/{{ reel.image_path }}" alt="Reel Image">
+            {% endif %}
             
             <div class="reel-actions">
                 <div class="action-item" onclick="likeReel('{{ reel.id }}', this)">
@@ -177,6 +191,20 @@
         }
     }
 
+    function toggleMute(btn) {
+        const reelItem = btn.closest('.reel-item');
+        const video = reelItem.querySelector('video');
+        const icon = btn.querySelector('i');
+        video.muted = !video.muted;
+        if (video.muted) {
+            icon.classList.remove('bi-volume-up-fill');
+            icon.classList.add('bi-volume-mute-fill');
+        } else {
+            icon.classList.remove('bi-volume-mute-fill');
+            icon.classList.add('bi-volume-up-fill');
+        }
+    }
+
     function likeReel(reelId, element) {
         fetch(`/like-post/${reelId}/`, {
             method: 'POST',
@@ -210,11 +238,13 @@
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             const video = entry.target.querySelector('video');
-            if (entry.isIntersecting) {
-                video.play().catch(e => console.log("Autoplay blocked:", e));
-            } else {
-                video.pause();
-                video.currentTime = 0;
+            if (video) {
+                if (entry.isIntersecting) {
+                    video.play().catch(e => console.log("Autoplay blocked:", e));
+                } else {
+                    video.pause();
+                    video.currentTime = 0;
+                }
             }
         });
     }, observerOptions);

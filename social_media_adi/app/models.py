@@ -34,6 +34,10 @@ class Profile(models.Model):
     score = models.FloatField(default=0.0)
     last_seen = models.DateTimeField(null=True, blank=True)
     dob = models.DateField(null=True, blank=True)
+    last_toxic_comment = models.DateTimeField(null=True, blank=True)  # Timestamp of most recent toxic comment
+    ban_until = models.DateTimeField(null=True, blank=True)           # When current ban expires
+    ban_level = models.IntegerField(default=1)                        # Ban multiplier: 1=4h, 2=8h, 3=12h...
+    last_ban_applied = models.DateTimeField(null=True, blank=True)    # When the last ban was issued (for escalation tracking)
 
     def __str__(self):
         return self.pic if self.pic else f"Profile of {self.user.username if self.user else 'Deleted User'}"
@@ -60,6 +64,11 @@ class Posts(models.Model):
     is_reel = models.BooleanField(default=False)
     score = models.FloatField(default=0.0)
     created = models.DateTimeField(default=timezone.now)
+
+    @property
+    def is_video_file(self):
+        if not self.image_path: return False
+        return self.image_path.lower().endswith(('.mp4', '.mov', '.webm', '.ogg'))
 
     def __str__(self):
         return f"{'Story' if self.is_story else 'Post'} {self.id} by {self.user.username if self.user else 'Deleted User'}"

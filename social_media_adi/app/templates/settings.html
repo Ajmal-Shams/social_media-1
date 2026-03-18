@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+.settings-container { max-width: 860px; margin: 40px auto; padding: 0 16px; }
+.settings-card {
+    background: #fff;
+    border: 1px solid #dbdbdb;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+}
+.settings-header {
+    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+    color: white;
+    padding: 24px 28px;
+}
+.settings-header h4 { font-weight: 700; margin: 0; font-size: 1.2rem; }
+.settings-header p  { margin: 4px 0 0; opacity: 0.85; font-size: 0.85rem; }
+
+.user-row {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 16px;
+    flex-wrap: wrap;
+    transition: background .15s;
+}
+.user-row:last-child { border-bottom: none; }
+.user-row:hover { background: #fafafa; }
+
+.user-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    object-fit: cover; flex-shrink: 0;
+}
+.user-info { flex: 1; min-width: 120px; }
+.user-info .uname { font-weight: 700; font-size: 0.95rem; }
+.user-info .urole { font-size: 0.75rem; color: #8e8e8e; }
+
+.score-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    min-width: 80px;
+    text-align: center;
+}
+.score-low   { background: #d4edda; color: #155724; }
+.score-mid   { background: #fff3cd; color: #856404; }
+.score-high  { background: #f8d7da; color: #721c24; }
+
+.action-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.action-group input[type=number] {
+    width: 72px; padding: 6px 10px;
+    border: 1px solid #dbdbdb; border-radius: 8px;
+    font-size: 0.85rem; text-align: center;
+}
+.action-btn {
+    border: none; border-radius: 8px;
+    padding: 6px 14px; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+}
+.action-btn:hover { opacity: 0.8; }
+.btn-plus   { background: #d4edda; color: #155724; }
+.btn-minus  { background: #fff3cd; color: #856404; }
+.btn-set    { background: #cce5ff; color: #004085; }
+.btn-reset  { background: #f8d7da; color: #721c24; }
+.btn-ban    { background: #1a1a2e; color: #ff6b6b; border: 1px solid #ff4444; }
+
+.current-score { font-weight: 700; font-size: 1.1rem; transition: all 0.3s; }
+.score-updated { transform: scale(1.2); }
+
+.own-badge { background: #e8f4fd; color: #0c63e4; font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.admin-badge { background: #fff3cd; color: #856404; font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+</style>
+
+<div class="settings-container">
+    <!-- Header Card -->
+    <div class="settings-card">
+        <div class="settings-header">
+            <h4>⚙️ Safety Score Settings</h4>
+            <p>Manage and adjust safety scores for users. Scores reflect content toxicity levels.</p>
+        </div>
+        <div class="px-4 py-3 border-bottom bg-light d-flex align-items-center gap-3 flex-wrap" style="font-size:0.85rem; color:#555;">
+            <span><span class="score-badge score-low me-1">●</span> 0–5: Good</span>
+            <span><span class="score-badge score-mid me-1">●</span> 5–15: Warning</span>
+            <span><span class="score-badge score-high me-1">●</span> 15+: Restricted</span>
+            {% if message %}
+            <span class="ms-auto badge bg-success text-white px-3 py-2" id="success-msg">{{ message }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- User List -->
+    <div class="settings-card">
+        {% for u in user_data %}
+        <div class="user-row" id="row-{{ u.id }}">
+            <!-- Avatar -->
+            <img src="https://ui-avatars.com/api/?name={{ u.username }}&background=random&bold=true" class="user-avatar">
+            <!-- Info -->
+            <div class="user-info">
+                <div class="uname">
+                    {{ u.username }}
+                    {% if u.id == request.user.id %}<span class="own-badge ms-1">You</span>{% endif %}
+                    {% if u.is_superuser %}<span class="admin-badge ms-1">Admin</span>{% endif %}
+                    {% if u.banned %}<span style="background:#f8d7da;color:#721c24;font-size:0.7rem;padding:2px 8px;border-radius:10px;font-weight:700;" class="ms-1">🚫 BANNED</span>{% endif %}
+                </div>
+                <div class="urole">Safety Score: <span class="current-score" id="score-{{ u.id }}">{{ u.score }}</span>
+                    {% if u.banned %}<span class="text-danger small ms-2">Expires: {{ u.ban_until_display }}</span>{% endif %}
+                </div>
+            </div>
+            <!-- Score Badge -->
+            {% if u.score <= 5.0 %}
+                <span class="score-badge score-low">{{ u.score }} / Low</span>
+            {% elif u.score <= 15.0 %}
+                <span class="score-badge score-mid" id="badge-{{ u.id }}">{{ u.score }} / Mid</span>
+            {% else %}
+                <span class="score-badge score-high" id="badge-{{ u.id }}">{{ u.score }} / High</span>
+            {% endif %}
+            <!-- Actions -->
+            <div class="action-group">
+                <input type="number" id="amount-{{ u.id }}" value="1" min="0" step="0.5" class="text-center">
+                <button class="action-btn btn-plus" onclick="adjustScore({{ u.id }}, 'increase')">+ Increase</button>
+                <button class="action-btn btn-minus" onclick="adjustScore({{ u.id }}, 'decrease')">− Decrease</button>
+                <button class="action-btn btn-set" onclick="adjustScore({{ u.id }}, 'set')">↑ Set To</button>
+                <button class="action-btn btn-reset" onclick="adjustScore({{ u.id }}, 'reset')">↺ Reset</button>
+                {% if is_admin and u.banned %}
+                <button class="action-btn btn-ban" onclick="adjustScore({{ u.id }}, 'remove_ban')">🚫 Remove Ban</button>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="text-center py-5 text-muted">No users found.</div>
+        {% endfor %}
+    </div>
+
+    <!-- Legend / Info -->
+    <div class="settings-card p-4">
+        <h6 class="fw-bold mb-3">ℹ️ How Safety Scores Work</h6>
+        <ul class="text-muted small mb-0" style="line-height: 2;">
+            <li><strong>Score &lt; 0.5</strong> — Content approved normally, no restrictions.</li>
+            <li><strong>Score 0.5–2</strong> — Mild toxicity detected. User is warned and score increases.</li>
+            <li><strong>Score 2–5</strong> — Elevated risk. Posting is restricted for highly toxic content.</li>
+            <li><strong>Score &gt; 5</strong> — User is blocked from posting until score is reduced (requires admin reset or comment removal).</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+function adjustScore(userId, action) {
+    const amount = parseFloat(document.getElementById('amount-' + userId).value) || 1;
+    const csrf = '{{ csrf_token }}';
+    const scoreEl = document.getElementById('score-' + userId);
+
+    fetch('/settings/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': csrf,
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: `user_id=${userId}&action=${action}&amount=${amount}`
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.success) {
+            if (res.action === 'remove_ban') {
+                // Reload so ban overlay disappears and button is hidden
+                location.reload();
+                return;
+            }
+            scoreEl.textContent = res.score;
+            scoreEl.classList.add('score-updated');
+            setTimeout(() => scoreEl.classList.remove('score-updated'), 500);
+            // Update badge color
+            const badge = document.querySelector(`#row-${userId} .score-badge`);
+            if (badge) {
+                badge.className = 'score-badge ' + (res.score <= 5 ? 'score-low' : res.score <= 15 ? 'score-mid' : 'score-high');
+                badge.textContent = `${res.score} / ` + (res.score <= 5 ? 'Low' : res.score <= 15 ? 'Mid' : 'High');
+            }
+        } else {
+            alert(res.error || 'Failed to update score.');
+        }
+    })
+    .catch(() => alert('Network error. Please try again.'));
+}
+</script>
+
+{% endblock %}

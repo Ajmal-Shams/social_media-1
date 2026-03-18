@@ -36,6 +36,9 @@ urlpatterns = [
     path('delete-comment/<int:comment_id>/', delete_comment, name='delete_comment'),
     path('reels/', reels, name='reels'),
     path('notifications/', notifications, name='notifications'),
-
+    path('explore/', explore, name='explore'),
+    path('edit-profile/', edit_profile, name='edit_profile'),
+    path('settings/', settings_page, name='settings'),
+    path('api/ban-status/', ban_status_api, name='ban_status_api'),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT) + static('profile/', document_root='profile/')

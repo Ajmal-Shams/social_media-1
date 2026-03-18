@@ -26,11 +26,166 @@
         .modern-nav { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); border-bottom: 1px solid #dbdbdb; height: 60px; }
         .nav-container { max-width: 975px; margin: 0 auto; padding: 0 20px; height: 100%; }
         main { max-width: 935px; margin: 0 auto; }
+
+        /* Profile Grid CSS */
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-gap: 5px;
+            padding: 20px 20px 0;
+            max-width: 935px;
+            margin: 0 auto;
+        }
+        .grid-item {
+            position: relative;
+            aspect-ratio: 1;
+            overflow: hidden;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #f0f0f0;
+        }
+        .grid-item img, .grid-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .item-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            gap: 20px;
+            font-weight: 500;
+            font-size: 14px;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
+
 </head>
 <body>
+    <!-- ===== UNIVERSAL BAN OVERLAY (JS-driven, works on every page) ===== -->
+    <div id="banOverlay" style="
+        display:none; position:fixed; inset:0; z-index:99999;
+        background:rgba(0,0,0,0.93);
+        align-items:center; justify-content:center;
+        flex-direction:column; text-align:center;
+        padding:40px; color:white; font-family:'Segoe UI',sans-serif;
+        backdrop-filter:blur(8px); pointer-events:all;
+    ">
+        <div style="max-width:500px; width:100%;">
+            <div style="font-size:5rem;margin-bottom:16px;animation:pulse 1.5s infinite;">🚫</div>
+            <h1 style="font-weight:800;font-size:2rem;color:#ff4444;margin-bottom:8px;">Account Temporarily Banned</h1>
+            <div id="banLevelBadge" style="display:inline-block;background:linear-gradient(135deg,#833ab4,#fd1d1d);color:white;
+                padding:6px 20px;border-radius:20px;font-weight:700;font-size:0.9rem;margin-bottom:20px;"></div>
+            <p style="color:#aaa;font-size:1rem;line-height:1.7;margin-bottom:28px;">
+                You have repeatedly violated our community guidelines by posting toxic content.<br>
+                Your account is restricted until the ban expires. Future violations will result in
+                <strong style="color:#ff6b6b;">longer bans</strong>.
+            </p>
+            <div style="background:rgba(255,255,255,0.07);border-radius:16px;padding:24px 32px;margin-bottom:24px;">
+                <div style="color:#aaa;font-size:0.85rem;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Time Remaining</div>
+                <div id="banCountdown" style="font-size:3rem;font-weight:800;font-variant-numeric:tabular-nums;color:white;letter-spacing:4px;">--:--:--</div>
+            </div>
+            <div id="banSteps" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:20px;"></div>
+            <p style="color:#555;font-size:0.8rem;margin-bottom:20px;">Every repeat offence within 4 days escalates your ban duration.</p>
+            <!-- Logout button -->
+            <a href="{% url 'logout' %}" style="
+                display:inline-block; background:rgba(255,255,255,0.08); color:#ccc;
+                border:1px solid rgba(255,255,255,0.15); border-radius:12px;
+                padding:10px 28px; font-size:0.9rem; font-weight:600;
+                text-decoration:none; transition:all 0.2s;
+                pointer-events:all;"
+                onmouseover="this.style.background='rgba(255,255,255,0.15)'"
+                onmouseout="this.style.background='rgba(255,255,255,0.08)'">
+                🚪 Logout
+            </a>
+        </div>
+    </div>
+    <style>
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
+    body.banned { overflow:hidden !important; pointer-events:none; }
+    #banOverlay { pointer-events:all !important; }
+    </style>
+    <script>
+    (function(){
+        let banUntilDate = null;
+        let countdownInterval = null;
+
+        function showBanOverlay(data){
+            banUntilDate = new Date(data.ban_until);
+            document.getElementById('banLevelBadge').textContent =
+                'Ban Level ' + data.ban_level + ' \u00b7 ' + data.ban_hours + ' Hour Ban';
+
+            // Build step bubbles
+            const stepsEl = document.getElementById('banSteps');
+            stepsEl.innerHTML = '';
+            data.ban_steps.forEach(function(step){
+                const active = step <= data.ban_hours;
+                const d = document.createElement('div');
+                d.style.cssText = 'padding:6px 14px;border-radius:10px;font-size:0.78rem;font-weight:700;' +
+                    'background:' + (active ? 'rgba(255,68,68,0.3)' : 'rgba(255,255,255,0.07)') + ';' +
+                    'color:' + (active ? '#ff8080' : '#555') + ';' +
+                    'border:1px solid ' + (active ? 'rgba(255,68,68,0.5)' : 'rgba(255,255,255,0.1)') + ';';
+                d.textContent = step + 'h';
+                stepsEl.appendChild(d);
+            });
+
+            const overlay = document.getElementById('banOverlay');
+            overlay.style.display = 'flex';
+            document.body.classList.add('banned');
+
+            if(!countdownInterval){
+                countdownInterval = setInterval(updateCountdown, 1000);
+                updateCountdown();
+            }
+        }
+
+        function hideBanOverlay(){
+            document.getElementById('banOverlay').style.display = 'none';
+            document.body.classList.remove('banned');
+            if(countdownInterval){ clearInterval(countdownInterval); countdownInterval = null; }
+            banUntilDate = null;
+        }
+
+        function updateCountdown(){
+            if(!banUntilDate) return;
+            const diff = banUntilDate - new Date();
+            if(diff <= 0){ hideBanOverlay(); checkBan(); return; }
+            const h = String(Math.floor(diff/3600000)).padStart(2,'0');
+            const m = String(Math.floor((diff%3600000)/60000)).padStart(2,'0');
+            const s = String(Math.floor((diff%60000)/1000)).padStart(2,'0');
+            document.getElementById('banCountdown').textContent = h+':'+m+':'+s;
+        }
+
+        function checkBan(){
+            fetch('/api/ban-status/', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                if(data.banned){ showBanOverlay(data); }
+                else { hideBanOverlay(); }
+            }).catch(function(){/* silent – user may not be logged in */});
+        }
+
+        // Run immediately on every page load, then poll every 30s
+        checkBan();
+        setInterval(checkBan, 30000);
+
+        // Re-check when browser restores page from back-forward cache
+        // (bfcache: pageshow fires with persisted=true, load event does NOT fire)
+        window.addEventListener('pageshow', function(e) {
+            checkBan();
+        });
+
+        // Also expose globally so AJAX handlers can trigger it immediately
+        window.checkBanStatus = checkBan;
+    })();
+    </script>
+
     <!-- Top Modern Navigation -->
     <nav class="modern-nav sticky-top">
         <div class="nav-container d-flex justify-content-between align-items-center">
@@ -60,7 +215,7 @@
                 </a>
                 <a href="#" data-bs-toggle="modal" data-bs-target="#create_modal" title="New Post"><i class="bi bi-plus-square nav-link-icon"></i></a>
                 <a href="{% url 'reels' %}" title="Reels"><i class="bi bi-play-btn{% if request.path == '/reels' %}-fill{% endif %} nav-link-icon"></i></a>
-                <a href="#" title="Explore"><i class="bi bi-compass nav-link-icon"></i></a>
+                <a href="{% url 'explore' %}" title="Explore"><i class="bi bi-compass{% if request.path == '/explore/' %}-fill{% endif %} nav-link-icon"></i></a>
                 <a href="{% url 'notifications' %}" title="Notifications" class="position-relative">
                     <i class="bi bi-heart{% if request.path == '/notifications/' %}-fill{% endif %} nav-link-icon"></i>
                     {% if pending_friend_requests_count > 0 %}
@@ -81,6 +236,9 @@
                             <i class="bi bi-person"></i>
                         </div>
                     {% endif %}
+                </a>
+                <a href="{% url 'settings' %}" title="Settings" class="d-flex align-items-center">
+                    <i class="bi bi-gear{% if request.path == '/settings/' %}-fill{% endif %} nav-link-icon"></i>
                 </a>
             </div>
         </div>
@@ -162,7 +320,237 @@
                 reader.readAsDataURL(file);
             }
         }
-    </script>
-    {% block extra_js %}{% endblock %}
-</body>
-</html>
+
+        $(document).ready(function() {
+            // Post Upload AJAX
+            $('#postForm').on('submit', function(e) {
+                if ($('#image-upload').val() === '') return;
+                e.preventDefault();
+                let formData = new FormData(this);
+                let shareBtn = $('#shareBtn');
+                shareBtn.text('Sharing...').css('pointer-events', 'none');
+                
+                $.ajax({
+                    url: $(this).attr('action'),
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    success: function(res) {
+                        shareBtn.text('Share').css('pointer-events', 'auto');
+                        if(res.success) {
+                            $('#create_modal').modal('hide');
+                            $('#postForm')[0].reset();
+                            $('#uploadArea').removeClass('d-none');
+                            $('#imagePreview').addClass('d-none');
+                            $('#modalFooter').addClass('d-none');
+                            
+                            // Call page-specific handler if exists, else refresh
+                            if (typeof addPostToFeed === 'function') {
+                                addPostToFeed(res.post);
+                            } else {
+                                location.reload();
+                            }
+                        } else {
+                            if(res.error === "toxic_blocked") {
+                                alert("Blocked: Your content was flagged as highly toxic and has been removed. Your safety score has been penalized.");
+                            } else {
+                                alert("Failed to post.");
+                            }
+                        }
+                    },
+                    error: function() {
+                        shareBtn.text('Share').css('pointer-events', 'auto');
+                        alert("Network error.");
+                    }
+                });
+            });
+
+        // Reset create modal state when it closes
+        $('#create_modal').on('hidden.bs.modal', function() {
+            $('#postForm')[0].reset();
+            $('#isStorySwitch').prop('checked', false);
+            $('#isReelSwitch').prop('checked', false);
+            $('#uploadArea').removeClass('d-none');
+            $('#imagePreview').addClass('d-none');
+            $('#modalFooter').addClass('d-none');
+            $('#previewImg').addClass('d-none').attr('src', '');
+            $('#previewVid').addClass('d-none').attr('src', '');
+        });
+
+            // Global Friend Action AJAX
+            $(document).on('click', '.ajax-friend-action', function(e) {
+                e.preventDefault();
+                let btn = $(this);
+                let url = btn.attr('href');
+                let action = btn.data('action'); // send, accept, reject, remove
+                
+                let originalHtml = btn.html();
+                btn.css('pointer-events', 'none').text('...');
+                
+                $.ajax({
+                    url: url,
+                    type: 'GET',
+                    headers: {'X-Requested-With': 'XMLHttpRequest'},
+                    success: function(res) {
+                        if(res.success) {
+                            if(action === 'send') {
+                                btn.text('Requested');
+                                btn.removeClass('btn-primary').addClass('btn-secondary');
+                                btn.removeClass('ajax-friend-action'); // Disable further clicks
+                            } else if(action === 'accept') {
+                                let row = btn.closest('.notification-row');
+                                if(row.length) {
+                                    row.fadeOut(300, function() { $(this).remove(); });
+                                    // Optionally decrement badge count
+                                } else {
+                                    // On profile
+                                    location.reload(); // Simple reload on profile for full state update, or can update DOM manually
+                                }
+                            } else if(action === 'reject') {
+                                let row = btn.closest('.notification-row');
+                                if(row.length) row.fadeOut(300, function() { $(this).remove(); });
+                                else location.reload();
+                            } else if(action === 'remove') {
+                                // Turn Unfollow into Follow
+                                btn.text('Follow');
+                                btn.removeClass('btn-outline-dark').addClass('btn-primary');
+                                let newUrl = url.replace('/friend/remove/', '/friend-request/send/');
+                                        btn.attr('href', newUrl);
+                                        btn.data('action', 'send');
+                                        btn.css('pointer-events', 'auto');
+                                    }
+                                } else {
+                                    btn.html(originalHtml).css('pointer-events', 'auto');
+                                }
+                            },
+                            error: function() {
+                                btn.html(originalHtml).css('pointer-events', 'auto');
+                            }
+                        });
+                    });
+
+                    // Global Comment AJAX
+                    $(document).on('submit', '.ajax-comment-form', function(e) {
+                        e.preventDefault();
+                        let form = $(this);
+                        let input = form.find('input[name="comment"], textarea[name="comment"]');
+                        let text = input.val().trim();
+                        if(!text) return;
+                        
+                        let submitBtn = form.find('button[type="submit"]');
+                        let csrf = form.find('input[name="csrfmiddlewaretoken"]').val();
+                        submitBtn.prop('disabled', true);
+                        
+                        $.ajax({
+                            url: form.attr('action'),
+                            type: 'POST',
+                            data: JSON.stringify({comment: text}),
+                            contentType: 'application/json',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRFToken': csrf
+                            },
+                            success: function(res) {
+                                submitBtn.prop('disabled', false);
+                                if(res.success) {
+                                    input.val('');
+                                    let modal = form.closest('.modal');
+                                    if(modal.length) {
+                                        let container = modal.find('.overflow-y-auto');
+                                        container.find('.text-center.text-muted').remove(); // remove 'No comments yet'
+                                        let flagHtml = res.comment.flagged ? '<div class="small text-danger"><i class="bi bi-exclamation-triangle"></i> Flagged</div>' : '';
+                                        let newComment = `
+                                            <div class="mb-3 d-flex justify-content-between align-items-start">
+                                                <div>
+                                                    <span class="fw-bold me-2">${res.comment.username}</span>
+                                                    <span>${res.comment.text}</span>
+                                                    ${flagHtml}
+                                                </div>
+                                                <a href="/delete-comment/${res.comment.id}/" class="text-muted small ajax-delete-comment"><i class="bi bi-trash"></i></a>
+                                            </div>`;
+                                        container.append(newComment);
+                                        container.scrollTop(container[0].scrollHeight);
+                                    }
+                                } else {
+                                    if(res.error === "blocked") {
+                                        alert("You are blocked from commenting.");
+                                    } else if(res.error === "toxic_blocked") {
+                                        let modal = form.closest('.modal');
+                                        let notifyContainer = modal.length ? modal.find('.modal-body') : form.parent();
+                                        
+                                        // Remove existing alert if any
+                                        notifyContainer.find('.toxic-alert').remove();
+                                        
+                                        let alertHtml = `
+                                        <div class="alert alert-warning alert-dismissible fade show border-0 shadow-sm toxic-alert mt-2 mb-2" role="alert" style="background: rgba(255, 133, 27, 0.1); color: #FF851B; font-size: 0.85rem;">
+                                            <i class="bi bi-shield-exclamation me-1"></i>
+                                            <strong>Safety Tip:</strong> Your comment was flagged for sensitive content and not posted.
+                                            <button type="button" class="btn-close btn-sm p-2" data-bs-dismiss="alert"></button>
+                                        </div>`;
+                                        
+                                        if (modal.length) {
+                                            modal.find('.p-3.border-bottom').after(alertHtml);
+                                        } else {
+                                            form.before(alertHtml);
+                                        }
+                                        
+                                        // Auto dismiss after 5 seconds
+                                        setTimeout(() => notifyContainer.find('.toxic-alert').fadeOut(300, function(){ $(this).remove(); }), 5000);
+                                        
+                                    } else {
+                                        alert("Failed to add comment.");
+                                    }
+                                }
+                            },
+                            error: function() {
+                                submitBtn.prop('disabled', false);
+                                alert("Network error.");
+                            }
+                        });
+                    });
+
+                    // Global Delete Comment AJAX
+                    $(document).on('click', '.ajax-delete-comment', function(e) {
+                        e.preventDefault();
+                        let btn = $(this);
+                        $.ajax({
+                            url: btn.attr('href'),
+                            type: 'GET',
+                            headers: {'X-Requested-With': 'XMLHttpRequest'},
+                            success: function(res) {
+                                if(res.success) {
+                                    btn.closest('.mb-3.d-flex').fadeOut(300, function() { $(this).remove(); });
+                                }
+                            }
+                        });
+                    });
+
+                    // Global Delete Post AJAX
+                    $(document).on('click', '.ajax-delete-post', function(e) {
+                        e.preventDefault();
+                        if(!confirm("Are you sure you want to delete this post?")) return;
+                        let btn = $(this);
+                        $.ajax({
+                            url: btn.attr('href'),
+                            type: 'GET',
+                            headers: {'X-Requested-With': 'XMLHttpRequest'},
+                            success: function(res) {
+                                if(res.success) {
+                                    let modal = btn.closest('.modal');
+                                    if(modal.length) {
+                                        modal.modal('hide');
+                                        location.reload(); 
+                                    } else {
+                                        btn.closest('article').fadeOut(300, function() { $(this).remove(); });
+                                    }
+                                }
+                            }
+                        });
+                    });
+                });
+            </script>
+            {% block extra_js %}{% endblock %}
+        </body>
+        </html>

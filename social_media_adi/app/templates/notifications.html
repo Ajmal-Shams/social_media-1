@@ -21,7 +21,7 @@
                     </div>
 
                     {% for req in pending_requests %}
-                    <div class="d-flex align-items-center px-4 py-3 border-bottom">
+                    <div class="d-flex align-items-center px-4 py-3 border-bottom notification-row">
                         <!-- Avatar -->
                         <a href="{% url 'view_profile' req.from_user.username %}" class="text-decoration-none me-3">
                             {% with prof=req.from_user.profile_set.first %}
@@ -49,12 +49,12 @@
 
                         <!-- Actions -->
                         <div class="d-flex gap-2 ms-3">
-                            <a href="{% url 'accept_friend_request' req.id %}?next={% url 'notifications' %}"
-                               class="btn btn-primary btn-sm fw-bold px-3">
+                            <a href="{% url 'accept_friend_request' req.id %}"
+                               class="btn btn-primary btn-sm fw-bold px-3 ajax-friend-action" data-action="accept">
                                 Confirm
                             </a>
-                            <a href="{% url 'reject_friend_request' req.id %}?next={% url 'notifications' %}"
-                               class="btn btn-outline-secondary btn-sm fw-bold px-3">
+                            <a href="{% url 'reject_friend_request' req.id %}"
+                               class="btn btn-outline-secondary btn-sm fw-bold px-3 ajax-friend-action" data-action="reject">
                                 Delete
                             </a>
                         </div>

@@ -91,20 +91,42 @@
         {% endif %}
         <!-- Stories -->
         <div class="d-flex gap-3 overflow-x-auto pb-4 mb-2 no-scrollbar">
-            <div class="text-center" style="min-width: 74px;">
-                <div class="story-ring">
-                    {% if request.session.profile and request.session.profile != "None" %}
-                        <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="story-img">
+            <div class="text-center" style="min-width: 74px; cursor: pointer;"
+                {% if own_story %}
+                    onclick="openStory('http://127.0.0.1:8000/{{ own_story.image_path|escapejs }}', '{{ request.user.username|escapejs }}', '{{ own_story.image_path|lower|escapejs }}')"
+                {% else %}
+                    onclick="$('#create_modal').modal('show'); $('#isStorySwitch').prop('checked', true);"
+                {% endif %}
+            >
+                <div class="story-ring{% if own_story %} border border-danger{% else %} border border-secondary{% endif %}" style="position:relative;">
+                    {% if own_story %}
+                        {# Story uploaded — show story thumbnail; clicking opens story viewer #}
+                        {% with path=own_story.image_path|lower %}
+                        {% if ".mp4" in path or ".webm" in path or ".mov" in path %}
+                            <video src="http://127.0.0.1:8000/{{ own_story.image_path }}" class="story-img" style="object-fit:cover;" muted preload="metadata"></video>
+                        {% else %}
+                            <img src="http://127.0.0.1:8000/{{ own_story.image_path }}" class="story-img"
+                                 onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
+                        {% endif %}
+                        {% endwith %}
+                        {# "+" add indicator in top-right corner #}
+                        <span style="position:absolute;bottom:2px;right:2px;width:18px;height:18px;background:#0095f6;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white;border:2px solid white;line-height:1;">+</span>
+                    {% elif request.session.profile and request.session.profile != "None" %}
+                        {# No story — show profile pic #}
+                        <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="story-img"
+                             onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
                     {% else %}
+                        {# No story, no profile pic — show person icon #}
                         <div class="story-img bg-light d-flex align-items-center justify-content-center text-muted">
-                            <i class="bi bi-person"></i>
+                            <i class="bi bi-person-circle fs-4"></i>
                         </div>
                     {% endif %}
                 </div>
                 <div class="small mt-1 text-truncate">Your Story</div>
             </div>
             {% for story in stories %}
-            <div class="text-center" style="min-width: 74px;">
+            <div class="text-center" style="min-width: 74px; cursor: pointer;"
+                 onclick="openStory('http://127.0.0.1:8000/{{ story.image_path }}', '{{ story.user.username }}', '{{ story.image_path|lower }}')">
                 <div class="story-ring">
                     {% with prof=story.user.profile_set.first %}
                     {% if prof and prof.pic and prof.pic != "None" %}
@@ -133,17 +155,22 @@
                     {% if post.user == request.user %}
                     <div class="dropdown">
                         <i class="bi bi-three-dots cursor-pointer" data-bs-toggle="dropdown"></i>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#editPostModal{{ post.id }}">Edit Caption</a></li>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            <li><a class="dropdown-item" href="#">Copy link</a></li>
+                            {% if post.user == request.user %}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger fw-bold" href="{% url 'delete_post' post.id %}" onclick="return confirm('Are you sure you want to delete this post?')">Delete</a></li>
+                            <li><a class="dropdown-item" href="{% url 'edit_post' post.id %}" data-bs-toggle="modal" data-bs-target="#editPostModal{{ post.id }}">Edit</a></li>
+                            <li><a class="dropdown-item text-danger fw-bold ajax-delete-post" href="{% url 'delete_post' post.id %}">Delete</a></li>
+                            {% else %}
+                            <li><a class="dropdown-item text-danger fw-bold" href="#">Unfollow</a></li>
+                            {% endif %}
                         </ul>
                     </div>
                     {% endif %}
                 </header>
 
                 <div class="post-image-container">
-                    {% if post.is_reel %}
+                    {% if post.is_video_file %}
                         <video src="http://127.0.0.1:8000/{{ post.image_path }}" class="w-100" controls style="max-height: 600px; background: black;"></video>
                     {% else %}
                         <img src="http://127.0.0.1:8000/{{ post.image_path }}" alt="Post Content">
@@ -168,7 +195,7 @@
                     {% endif %}
                 </div>
 
-                <form class="comment-input-container d-flex" method="post" action="{% url 'add_comment' post.id %}">
+                <form class="comment-input-container d-flex ajax-comment-form" method="post" action="{% url 'add_comment' post.id %}">
                     {% csrf_token %}
                     <textarea name="comment" class="comment-input" rows="1" placeholder="Add a comment..."></textarea>
                     <button type="submit" class="btn btn-link text-decoration-none fw-bold p-0 ms-2" style="font-size: 14px;">Post</button>
@@ -196,7 +223,7 @@
                                             {% endif %}
                                         </div>
                                         {% if comment.user == request.user %}
-                                        <a href="{% url 'delete_comment' comment.id %}" class="text-muted small"><i class="bi bi-trash"></i></a>
+                                        <a href="{% url 'delete_comment' comment.id %}" class="text-muted small ajax-delete-comment"><i class="bi bi-trash"></i></a>
                                         {% endif %}
                                     </div>
                                     {% empty %}
@@ -204,10 +231,10 @@
                                     {% endfor %}
                                 </div>
                                 <div class="p-3 border-top">
-                                    <form method="post" action="{% url 'add_comment' post.id %}" class="d-flex">
+                                    <form method="post" action="{% url 'add_comment' post.id %}" class="d-flex ajax-comment-form">
                                         {% csrf_token %}
                                         <input type="text" name="comment" class="form-control border-0 shadow-none" placeholder="Add a comment...">
-                                        <button class="btn btn-link text-decoration-none fw-bold">Post</button>
+                                        <button type="submit" class="btn btn-link text-decoration-none fw-bold">Post</button>
                                     </form>
                                 </div>
                             </div>
@@ -223,7 +250,12 @@
     <div class="col-lg-4 d-none d-lg-block">
         <div class="sticky-top" style="top: 90px;">
             <div class="d-flex align-items-center gap-3 mb-4">
-                <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="nav-avatar" style="width: 56px; height: 56px;">
+                {% if request.session.profile and request.session.profile != "None" %}
+                    <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="nav-avatar" style="width: 56px; height: 56px;"
+                         onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ user.username }}&background=random&bold=true&size=56';">
+                {% else %}
+                    <img src="https://ui-avatars.com/api/?name={{ user.username }}&background=random&bold=true&size=56" class="nav-avatar" style="width: 56px; height: 56px;">
+                {% endif %}
                 <div>
                     <div class="fw-bold">{{ user.username }}</div>
                     <div class="text-muted small">{{ user.first_name }} {{ user.last_name }}</div>
@@ -246,7 +278,7 @@
                     <div class="text-muted extra-small">Suggested for you</div>
                 </div>
                 <a href="{% url 'send_friend_request' suggest.id %}"
-                   class="btn btn-link text-decoration-none fw-bold ms-auto extra-small p-0"
+                   class="btn btn-link text-decoration-none fw-bold ms-auto extra-small p-0 ajax-friend-action" data-action="send"
                    style="color: #0095f6;">Follow</a>
             </div>
             {% endfor %}
@@ -260,12 +292,158 @@
     </div>
 </div>
 
+<!-- Story Viewer Overlay -->
+<div id="storyViewer" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
+    <!-- Progress bar -->
+    <div style="position:absolute; top:0; left:0; right:0; height:3px; background:rgba(255,255,255,0.3);">
+        <div id="storyProgress" style="height:100%; background:white; width:0%; transition:width linear;"></div>
+    </div>
+    <!-- Header -->
+    <div style="position:absolute; top:12px; left:0; right:0; display:flex; align-items:center; padding:0 16px; z-index:10;">
+        <div style="width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; margin-right:10px;">
+            <i class="bi bi-person text-white"></i>
+        </div>
+        <span id="storyUsername" style="color:white; font-weight:600; font-size:14px;"></span>
+        <button onclick="closeStory()" style="margin-left:auto; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer; line-height:1;">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+    <!-- Media -->
+    <div style="max-width:400px; width:100%; max-height:calc(100vh - 80px); display:flex; align-items:center; justify-content:center;">
+        <img id="storyImage" src="" alt="Story" style="max-width:100%; max-height:calc(100vh - 80px); object-fit:contain; border-radius:8px; display:none;">
+        <video id="storyVideo" src="" autoplay muted loop style="max-width:100%; max-height:calc(100vh - 80px); object-fit:contain; border-radius:8px; display:none;"></video>
+    </div>
+</div>
+
 <script>
+    let storyTimer = null;
+    const STORY_DURATION = 5000; // 5 seconds
+
+    function openStory(src, username, pathLower) {
+        const viewer = document.getElementById('storyViewer');
+        const img = document.getElementById('storyImage');
+        const vid = document.getElementById('storyVideo');
+        const usernameEl = document.getElementById('storyUsername');
+        const progress = document.getElementById('storyProgress');
+
+        usernameEl.textContent = username;
+        viewer.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        // Detect if video or image
+        const isVideo = pathLower.endsWith('.mp4') || pathLower.endsWith('.webm') ||
+                        pathLower.endsWith('.mov') || pathLower.endsWith('.ogg') ||
+                        pathLower.endsWith('.avi');
+
+        img.style.display = 'none';
+        vid.style.display = 'none';
+        progress.style.transition = 'none';
+        progress.style.width = '0%';
+
+        if (isVideo) {
+            vid.src = src;
+            vid.style.display = 'block';
+            vid.play().catch(() => {});
+        } else {
+            img.src = src;
+            img.style.display = 'block';
+        }
+
+        // Auto-close after duration
+        clearTimeout(storyTimer);
+        setTimeout(() => {
+            progress.style.transition = 'width ' + STORY_DURATION + 'ms linear';
+            progress.style.width = '100%';
+        }, 50);
+        storyTimer = setTimeout(closeStory, STORY_DURATION);
+    }
+
+    function closeStory() {
+        clearTimeout(storyTimer);
+        const viewer = document.getElementById('storyViewer');
+        const vid = document.getElementById('storyVideo');
+        const progress = document.getElementById('storyProgress');
+        vid.pause();
+        vid.src = '';
+        document.getElementById('storyImage').src = '';
+        progress.style.transition = 'none';
+        progress.style.width = '0%';
+        viewer.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    // Close on backdrop click
+    document.getElementById('storyViewer').addEventListener('click', function(e) {
+        if (e.target === this) closeStory();
+    });
+
+    function likePost(postId, element) {
+        fetch(`/like-post/${postId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(r => {
+            if (!r.ok) throw new Error('Server error: ' + r.status);
+            return r.json();
+        })
+        .then(data => {
+            if (data.success) {
+                if (data.liked) {
+                    element.classList.remove('bi-heart');
+                    element.classList.add('bi-heart-fill');
+                } else {
+                    element.classList.remove('bi-heart-fill');
+                    element.classList.add('bi-heart');
+                }
+                const countEl = document.getElementById('likes-count-' + postId);
+                if (countEl) countEl.innerText = data.likes;
+            }
+        })
+        .catch(err => console.error('Like failed:', err));
+    }
+
     {% if toxic_blocked %}
     alert("Blocked: Your content was flagged as highly toxic and has been removed. Your safety score has been penalized.");
     {% endif %}
     {% if issues %}
     alert("Warning: Your content was flagged for potentially harmful language. Your safety score has been updated.");
     {% endif %}
+
+    function addPostToFeed(post) {
+        if (post.is_story || post.is_reel) {
+            location.reload();
+            return;
+        }
+
+        let mediaHtml = post.is_video_file ?
+            `<video src="http://127.0.0.1:8000/${post.image_path}" class="w-100" controls style="max-height: 600px; background: black;"></video>` :
+            `<img src="http://127.0.0.1:8000/${post.image_path}" alt="Post Content">`;
+
+        let newPostHtml = `
+            <article class="post-card shadow-sm">
+                <header class="post-header d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <img src="https://ui-avatars.com/api/?name=${post.username}&background=random" class="nav-avatar" style="width: 32px; height: 32px;">
+                        <span class="fw-bold">${post.username}</span>
+                    </div>
+                </header>
+                <div class="post-image-container">
+                    ${mediaHtml}
+                </div>
+                <div class="post-footer">
+                    <div class="d-flex mb-2">
+                        <i class="bi bi-heart action-icon" onclick="likePost('${post.id}', this)"></i>
+                    </div>
+                    <div class="fw-bold mb-1"><span id="likes-count-${post.id}">0</span> likes</div>
+                    <div>
+                        <span class="fw-bold me-1">${post.username}</span>
+                        <span>${post.text}</span>
+                    </div>
+                </div>
+            </article>`;
+        $('.posts').prepend(newPostHtml);
+    }
 </script>
 {% endblock %}

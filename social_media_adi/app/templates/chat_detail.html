@@ -70,6 +70,15 @@
             <i class="bi bi-info-circle ms-auto fs-5"></i>
         </div>
 
+        {% if msg_flagged %}
+        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-0 mb-0" role="alert"
+             style="background: rgba(237, 73, 86, 0.1); color: #ed4956; font-size: 13px;">
+            <i class="bi bi-shield-x me-1"></i>
+            <strong>Message Blocked:</strong> Your message was flagged as potentially harmful and was <em>not</em> sent to {{ friend.username }}.
+            <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+
         <div class="messages-box no-scrollbar" id="messagesBox">
             {% for message in messages %}
             <div class="message {% if message.sender == request.user %}sent{% else %}received{% endif %}">

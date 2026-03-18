@@ -55,6 +55,10 @@ def home(request):
     # Only show regular posts in the main feed (exclude reels)
     db = Posts.objects.filter(is_story=False, is_reel=False).order_by("-id")
     
+    # Get user's own active story (last 24 hours)
+    last_24h = timezone.now() - timezone.timedelta(hours=24)
+    own_story = Posts.objects.filter(user=request.user, is_story=True, created__gte=last_24h).order_by('-created').first()
+
     # Get stories from friends (last 24 hours)
     friends = Friend.objects.filter(user=request.user)
     friends_list = [f.friend for f in friends]
@@ -79,14 +83,50 @@ def home(request):
         id__in=[f.friend.id for f in friends]
     )[:5]
     
+    # Auto-reduce score if user has been good for 4+ hours since last toxic comment
+    try:
+        user_profile = Profile.objects.get(user=request.user)
+        if user_profile.last_toxic_comment and user_profile.score > 0:
+            hours_since = (timezone.now() - user_profile.last_toxic_comment).total_seconds() / 3600
+            # Reduce 1 point per complete 4-hour period of good behavior
+            reduction_steps = int(hours_since // 4)
+            if reduction_steps > 0:
+                user_profile.score = max(0.0, user_profile.score - reduction_steps)
+                # Advance last_toxic_comment by the windows consumed so we don't double-reduce
+                user_profile.last_toxic_comment += timezone.timedelta(hours=reduction_steps * 4)
+                if user_profile.score <= 0:
+                    user_profile.last_toxic_comment = None  # Clean slate
+                user_profile.save()
+    except Profile.DoesNotExist:
+        pass
+
     unread_messages_count = Message.objects.filter(receiver=request.user, is_read=False).count() if request.user.is_authenticated else 0
+
+    # Pass ban status to templates
+    ban_until = None
+    ban_level = 1
+    ban_hours = 4
+    try:
+        user_profile = Profile.objects.get(user=request.user)
+        if user_profile.ban_until and user_profile.ban_until > timezone.now():
+            ban_until = user_profile.ban_until.isoformat()
+            ban_level = user_profile.ban_level
+            ban_hours = ban_level * 4
+    except Profile.DoesNotExist:
+        pass
+
     return render(request, "home.html", {
         "db": db,
+        "own_story": own_story,
         "stories": stories,
         "suggestions": suggestions,
         "issues": issues,
         "toxic_blocked": toxic_blocked,
-        "unread_messages_count": unread_messages_count
+        "unread_messages_count": unread_messages_count,
+        "ban_until": ban_until,
+        "ban_level": ban_level,
+        "ban_hours": ban_hours,
+        "ban_steps": [i*4 for i in range(1, 8)],
     })
 
 
@@ -111,13 +151,35 @@ from django.contrib.auth.decorators import login_required
 # Chat views
 @login_required(login_url='login')
 def chat_list(request):
-    # List all friends (users except self)
-    users = User.objects.exclude(id=request.user.id)
+    from datetime import datetime as dt
+    # List all users except self
+    users = list(User.objects.exclude(id=request.user.id))
     user_profiles = {u.id: Profile.objects.filter(user=u).first() for u in users}
     # Unread message count per user
     unread_counts = {u.id: Message.objects.filter(sender=u, receiver=request.user, is_read=False).count() for u in users}
-    unread_messages_count = Message.objects.filter(receiver=request.user, is_read=False).count() if request.user.is_authenticated else 0
-    return render(request, "chat_list.html", {"users": users, "user_profiles": user_profiles, "unread_counts": unread_counts, "unread_messages_count": unread_messages_count})
+
+    # Get latest message timestamp for each user (used for sorting conversations)
+    user_last_msg = {}
+    for u in users:
+        last_msg = Message.objects.filter(
+            Q(sender=request.user, receiver=u) | Q(sender=u, receiver=request.user)
+        ).order_by('-timestamp').first()
+        user_last_msg[u.id] = last_msg.timestamp if last_msg else None
+
+    # Sort: most recently messaged users appear first; users with no messages go to the bottom
+    users_sorted = sorted(
+        users,
+        key=lambda u: user_last_msg.get(u.id) or dt(1970, 1, 1, tzinfo=timezone.utc),
+        reverse=True
+    )
+
+    unread_messages_count = Message.objects.filter(receiver=request.user, is_read=False).count()
+    return render(request, "chat_list.html", {
+        "users": users_sorted,
+        "user_profiles": user_profiles,
+        "unread_counts": unread_counts,
+        "unread_messages_count": unread_messages_count
+    })
 
 @login_required(login_url='login')
 def chat_detail(request, user_id):
@@ -129,8 +191,16 @@ def chat_detail(request, user_id):
     ).order_by('timestamp')
     # Mark all received messages as read
     Message.objects.filter(sender=friend, receiver=request.user, is_read=False).update(is_read=True)
-    unread_messages_count = Message.objects.filter(receiver=request.user, is_read=False).count() if request.user.is_authenticated else 0
-    return render(request, "chat_detail.html", {"friend": friend, "friend_profile": friend_profile, "messages": messages, "unread_messages_count": unread_messages_count})
+    # Pop the flagged-message session flag (set by send_message when a toxic message is blocked)
+    msg_flagged = request.session.pop('msg_flagged', False)
+    unread_messages_count = Message.objects.filter(receiver=request.user, is_read=False).count()
+    return render(request, "chat_detail.html", {
+        "friend": friend,
+        "friend_profile": friend_profile,
+        "messages": messages,
+        "msg_flagged": msg_flagged,
+        "unread_messages_count": unread_messages_count
+    })
 
 @login_required(login_url='login')
 def send_message(request, user_id):
@@ -139,38 +209,88 @@ def send_message(request, user_id):
         text = request.POST.get("text", "").strip()
         if text:
             score = get_toxicity_score(text)
-            Message.objects.create(sender=request.user, receiver=friend, text=text, score=score)
-            
+
             if score > 0.5:
-                profile = Profile.objects.get(user=request.user)
+                # Block the message — do NOT deliver it to the receiver
+                profile, _ = Profile.objects.get_or_create(user=request.user)
                 profile.score += score
                 profile.save()
-                # We could add a notification here as well
+                request.session['msg_flagged'] = True
+                return redirect('chat-detail', user_id=user_id)
+
+            # Only create message if it passes the toxicity check
+            Message.objects.create(sender=request.user, receiver=friend, text=text, score=score)
         return redirect('chat-detail', user_id=user_id)
 from django.utils import timezone
 
 def add_comment(request, id):
     if request.method == 'POST':
-        comment_text = request.POST.get('comment', '').strip()
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
+        import json
+        if is_ajax and request.content_type == 'application/json':
+            try:
+                data = json.loads(request.body)
+                comment_text = data.get('comment', '').strip()
+            except json.JSONDecodeError:
+                comment_text = ''
+        else:
+            comment_text = request.POST.get('comment', '').strip()
+            
         if not comment_text:
+            if is_ajax: return JsonResponse({"success": False, "error": "Empty comment"})
             return redirect('home')  # Or show error if empty comment
 
         if request.user.is_anonymous:
+            if is_ajax: return JsonResponse({"success": False, "error": "Not authenticated"})
             return redirect('login')
 
         profile, created = Profile.objects.get_or_create(user=request.user)
 
-        if profile.score > 5:
-            print("User is blocked due to high score")
-            request.session['issues'] = True
+        # --- Progressive ban check ---
+        if profile.ban_until and profile.ban_until > timezone.now():
+            secs_left = int((profile.ban_until - timezone.now()).total_seconds())
+            if is_ajax:
+                return JsonResponse({"success": False, "error": "banned", "ban_seconds": secs_left})
             return redirect('home')
 
         sentiment_score = get_toxicity_score(comment_text)
-        if sentiment_score > 0.5:
-            request.session['notification'] = True
 
         # Get the post
-        post_instance = Posts.objects.get(id=id)
+        try:
+            post_instance = Posts.objects.get(id=id)
+        except Posts.DoesNotExist:
+            if is_ajax: return JsonResponse({"success": False, "error": "Post not found"})
+            return redirect('home')
+
+        # If toxic comment, increase profile score and issue progressive ban if threshold reached
+        if sentiment_score > 0.5:
+            request.session['notification'] = True
+            profile.score += sentiment_score
+            profile.last_toxic_comment = timezone.now()
+
+            # Issue a ban only when the threshold is reached
+            if profile.score > 20:
+                now = timezone.now()
+                # Escalate ban_level if last ban was within 4 days
+                if profile.last_ban_applied and (now - profile.last_ban_applied).days < 4:
+                    profile.ban_level += 1  # each repeat offence within 4 days escalates
+                # else ban_level stays same (or resets – here we keep escalation cumulative)
+                ban_hours = profile.ban_level * 4
+                profile.ban_until = now + timezone.timedelta(hours=ban_hours)
+                profile.last_ban_applied = now
+                profile.score = 0.0  # reset score on ban so next offence starts fresh
+                profile.save()
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": "banned",
+                                         "ban_seconds": ban_hours * 3600,
+                                         "ban_hours": ban_hours})
+                return redirect('home')
+
+            profile.save()
+            if is_ajax:
+                return JsonResponse({"success": False, "error": "toxic_blocked"})
+            return redirect('home')
 
         # Save the comment
         comment = Comment.objects.create(
@@ -182,20 +302,16 @@ def add_comment(request, id):
         post_instance.comments.add(comment)
         post_instance.save()
 
-        # If toxic comment, increase profile score and create report
-        if sentiment_score > 0.5:
-            profile.score += sentiment_score
-            profile.save()
-
-            CommentReport.objects.create(
-                comment=comment,
-                commenter=request.user,
-                post=post_instance,
-                post_owner=post_instance.user,
-                comment_text=comment_text,
-                score=sentiment_score,
-                timestamp=timezone.now()
-            )
+        if is_ajax:
+            return JsonResponse({
+                "success": True,
+                "comment": {
+                    "id": comment.id,
+                    "text": comment.text,
+                    "username": comment.user.username,
+                    "flagged": False
+                }
+            })
 
         return redirect('home')
 
@@ -212,6 +328,8 @@ def create(request):
         is_story = request.POST.get('is_story') == 'on'
         is_reel = request.POST.get('is_reel') == 'on'
         
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
         # Safety Check
         score = get_toxicity_score(text)
         
@@ -223,6 +341,8 @@ def create(request):
             profile.save()
             # Hard block toxic posts as per user request "cannot post"
             request.session['toxic_blocked'] = True
+            if is_ajax:
+                return JsonResponse({"success": False, "error": "toxic_blocked"})
             return redirect('home')
 
         if image:
@@ -243,7 +363,26 @@ def create(request):
                 score=score
             )
             db.save()
+            
+            if is_ajax:
+                return JsonResponse({
+                    "success": True,
+                    "post": {
+                        "id": db.id,
+                        "username": user.username,
+                        "user_initial": user.username[0].upper(),
+                        "image_path": db.image_path,
+                        "text": db.text,
+                        "like_count": 0,
+                        "comment_count": 0,
+                        "is_reel": is_reel,
+                        "is_story": is_story,
+                        "is_video_file": db.is_video_file
+                    }
+                })
             return redirect('home')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": False, "error": "Invalid request"})
     return redirect('home')
 
 from django.views.decorators.csrf import csrf_exempt
@@ -263,6 +402,8 @@ def delete_post(request, post_id):
         profile.score = max(0, profile.score - post.score)
         profile.save()
     post.delete()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": True})
     return redirect('home')
 
 @login_required(login_url='login')
@@ -291,7 +432,11 @@ def delete_comment(request, comment_id):
             profile.score = max(0, profile.score - comment.score)
             profile.save()
         comment.delete()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({"success": True})
     except Comment.DoesNotExist:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({"success": False, "error": "Not found"})
         pass
     return redirect(request.META.get('HTTP_REFERER', 'home'))
 
@@ -306,7 +451,7 @@ def app_login(request):
             try:
                 profile = Profile.objects.get(user=user)
 
-                if profile.score > 5:
+                if profile.score > 20:
                     warning_message = f"⚠️ Hi {user.username}, your profile score is {profile.score:.2f}. Please remove flagged comments before proceeding."
 
                     return render(request, "login.html", {
@@ -369,7 +514,10 @@ def profile(request, username=None):
     except Profile.DoesNotExist:
         profile_obj = Profile.objects.create(user=viewed_user)
         
-    posts = Posts.objects.filter(user=viewed_user).order_by('-id')
+    # Separate regular posts, reels, and stories
+    all_posts = Posts.objects.filter(user=viewed_user).order_by('-id')
+    regular_posts = all_posts.filter(is_story=False, is_reel=False)
+    reels_posts = all_posts.filter(is_reel=True)
     
     # Calculate counts
     followers_count = Friend.objects.filter(friend=viewed_user).count()
@@ -388,8 +536,11 @@ def profile(request, username=None):
 
     return render(request, "profile.html", {
         "viewed_user": viewed_user,
-        "profile": profile_obj, 
-        'db': posts,
+        "profile": profile_obj,
+        'db': regular_posts,
+        'reels_db': reels_posts,
+        'posts_count': regular_posts.count(),
+        'reels_count': reels_posts.count(),
         'followers_count': followers_count,
         'following_count': following_count,
         'is_self': is_self,
@@ -398,6 +549,45 @@ def profile(request, username=None):
         'received_request': received_request,
         'incoming_requests': incoming_requests
     })
+
+
+@login_required(login_url='login')
+def edit_profile(request):
+    """Allow user to edit their bio, username, first name, and last name via AJAX."""
+    if request.method == "POST":
+        bio = request.POST.get('bio', '').strip()
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        username = request.POST.get('username', '').strip()
+
+        user = request.user
+        
+        # Check if username is being changed and if it's already taken
+        if username and username != user.username:
+            if User.objects.filter(username=username).exclude(id=user.id).exists():
+                return JsonResponse({"success": False, "error": "Username already exists."})
+            user.username = username
+
+        # Update user name fields
+        user.first_name = first_name
+        user.last_name = last_name
+        user.save()
+
+        # Update profile bio
+        profile_obj, _ = Profile.objects.get_or_create(user=user)
+        profile_obj.text = bio
+        profile_obj.save()
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                "success": True,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "username": user.username,
+                "bio": profile_obj.text
+            })
+            
+    return redirect('profile')
 
 def app_logout(request):
     logout(request)
@@ -534,7 +724,7 @@ from django.http import JsonResponse
 from .models import Posts
 
 @require_POST
-@login_required
+@login_required(login_url='login')
 def like_post(request, post_id):
     try:
         post = Posts.objects.get(id=post_id)
@@ -581,6 +771,10 @@ def send_friend_request(request, user_id):
         # Reset a rejected/accepted request back to pending
         obj.status = 'pending'
         obj.save()
+        
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": True, "status": "pending"})
+        
     # Support redirect back to wherever the request came from (home suggestions, search, etc.)
     next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
     if next_url:
@@ -592,11 +786,17 @@ def accept_friend_request(request, request_id):
     try:
         friend_request = FriendRequest.objects.get(id=request_id, to_user=request.user)
     except FriendRequest.DoesNotExist:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({"success": False, "error": "Not found"})
         return redirect('profile')
     Friend.objects.get_or_create(user=friend_request.from_user, friend=friend_request.to_user)
     Friend.objects.get_or_create(user=friend_request.to_user, friend=friend_request.from_user)
     friend_request.status = 'accepted'
     friend_request.save()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": True, "status": "accepted"})
+        
     # Redirect back to referrer (notifications page, profile page, etc.)
     next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
     if next_url:
@@ -608,9 +808,15 @@ def reject_friend_request(request, request_id):
     try:
         friend_request = FriendRequest.objects.get(id=request_id, to_user=request.user)
     except FriendRequest.DoesNotExist:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({"success": False, "error": "Not found"})
         return redirect('profile')
     # DELETE the request entirely so the sender can re-send in the future
     friend_request.delete()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": True, "status": "rejected"})
+        
     next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
     if next_url:
         return redirect(next_url)
@@ -625,6 +831,10 @@ def remove_friend(request, user_id):
     FriendRequest.objects.filter(
         Q(from_user=request.user, to_user=friend_user) | Q(from_user=friend_user, to_user=request.user)
     ).delete()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({"success": True, "status": "removed"})
+        
     # Redirect back to the viewed user's profile, not own profile
     return redirect('view_profile', username=friend_user.username)
 
@@ -644,3 +854,103 @@ def reels(request):
     # Fetch only Reels
     all_reels = Posts.objects.filter(is_reel=True).order_by('-created')
     return render(request, "reels.html", {"reels": all_reels})
+
+
+@login_required(login_url='login')
+def explore(request):
+    """
+    Explore page: shows all public regular posts (non-story, non-reel) from all users,
+    ordered by newest first. Used for content discovery — similar to Instagram's Explore tab.
+    """
+    explore_posts = Posts.objects.filter(
+        is_story=False, is_reel=False
+    ).select_related('user').order_by('-created')
+    return render(request, "explore.html", {"explore_posts": explore_posts})
+
+
+@login_required(login_url='login')
+def settings_page(request):
+    """Universal Settings: adjust safety scores for any user. Superusers can manage all; regular users see only themselves."""
+    is_admin = request.user.is_superuser
+
+    message = None
+    if request.method == 'POST':
+        target_user_id = request.POST.get('user_id')
+        action = request.POST.get('action')          # 'increase', 'decrease', 'reset', 'set'
+        amount = float(request.POST.get('amount', 1.0))
+
+        try:
+            target_user = User.objects.get(id=target_user_id)
+            # Non-admins can only edit their own score
+            if not is_admin and target_user != request.user:
+                return JsonResponse({'success': False, 'error': 'Unauthorized'}, status=403)
+
+            profile_obj, _ = Profile.objects.get_or_create(user=target_user)
+
+            if action == 'increase':
+                profile_obj.score += amount
+            elif action == 'decrease':
+                profile_obj.score = max(0.0, profile_obj.score - amount)
+            elif action == 'reset':
+                profile_obj.score = 0.0
+            elif action == 'set':
+                profile_obj.score = max(0.0, amount)
+            elif action == 'remove_ban':
+                profile_obj.ban_until = None
+                profile_obj.ban_level = 1  # Reset escalation for testing
+                profile_obj.score = 0.0
+
+            profile_obj.save()
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': True, 'score': round(profile_obj.score, 2),
+                                     'username': target_user.username, 'action': action})
+
+            message = f"Score updated for {target_user.username}."
+        except User.DoesNotExist:
+            message = "User not found."
+
+    # Build user list
+    if is_admin:
+        users = User.objects.all().order_by('username')
+    else:
+        users = [request.user]
+
+    user_data = []
+    for u in users:
+        p = Profile.objects.filter(user=u).first()
+        is_banned = bool(p and p.ban_until and p.ban_until > timezone.now())
+        user_data.append({
+            'id': u.id,
+            'username': u.username,
+            'score': round(p.score, 2) if p else 0.0,
+            'is_superuser': u.is_superuser,
+            'banned': is_banned,
+            'ban_until_display': (p.ban_until.strftime('%b %d, %H:%M') if is_banned else ''),
+            'ban_level': p.ban_level if p else 1,
+        })
+
+    return render(request, 'settings.html', {
+        'user_data': user_data,
+        'is_admin': is_admin,
+        'message': message,
+    })
+
+
+@login_required(login_url='login')
+def ban_status_api(request):
+    """Lightweight API: returns the logged-in user's ban status as JSON.
+    Called by base.html JS on every page load to enforce the ban overlay universally."""
+    try:
+        profile = Profile.objects.get(user=request.user)
+        if profile.ban_until and profile.ban_until > timezone.now():
+            return JsonResponse({
+                'banned': True,
+                'ban_until': profile.ban_until.isoformat(),
+                'ban_level': profile.ban_level,
+                'ban_hours': profile.ban_level * 4,
+                'ban_steps': [i * 4 for i in range(1, 8)],
+            })
+    except Profile.DoesNotExist:
+        pass
+    return JsonResponse({'banned': False})
