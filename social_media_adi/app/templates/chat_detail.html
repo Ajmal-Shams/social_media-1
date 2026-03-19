@@ -91,12 +91,12 @@
         </div>
 
         <div class="chat-input-container">
-            <form action="{% url 'send-message' friend.id %}" method="post">
+            <form id="chatForm" action="{% url 'send-message' friend.id %}" method="post">
                 {% csrf_token %}
                 <div class="chat-input-wrapper">
                     <i class="bi bi-emoji-smile me-2 fs-5"></i>
-                    <input type="text" name="text" class="chat-input" placeholder="Message..." autocomplete="off">
-                    <button type="submit" class="btn btn-link text-decoration-none fw-bold p-0">Send</button>
+                    <input id="chatInput" type="text" name="text" class="chat-input" placeholder="Message..." autocomplete="off">
+                    <button type="submit" id="chatSubmit" class="btn btn-link text-decoration-none fw-bold p-0">Send</button>
                 </div>
             </form>
         </div>
@@ -104,8 +104,62 @@
 </div>
 
 <script>
-    // Scroll to bottom
+    // Scroll to bottom initially
     const box = document.getElementById('messagesBox');
-    box.scrollTop = box.scrollHeight;
+    if(box) box.scrollTop = box.scrollHeight;
+
+    $(document).ready(function() {
+        $('#chatForm').on('submit', function(e) {
+            e.preventDefault();
+            let form = $(this);
+            let input = $('#chatInput');
+            let text = input.val().trim();
+            if(!text) return;
+
+            let submitBtn = $('#chatSubmit');
+            submitBtn.prop('disabled', true);
+
+            $.ajax({
+                url: form.attr('action'),
+                type: 'POST',
+                data: form.serialize(),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                success: function(res) {
+                    submitBtn.prop('disabled', false);
+                    if(res.success) {
+                        input.val('');
+                        // Append message
+                        let newMsg = '<div class="message sent">' + $('<div>').text(res.text).html() + '</div>';
+                        $('#messagesBox').append(newMsg);
+                        let b = document.getElementById('messagesBox');
+                        b.scrollTop = b.scrollHeight;
+                    } else {
+                        if(res.error === "banned") {
+                            input.val('');
+                            if(typeof window.checkBanStatus === 'function') window.checkBanStatus();
+                        } else if(res.error === "toxic_blocked") {
+                            input.val('');
+                            // Show the toxic alert dynamically
+                            if ($('#dynamic-toxic-alert').length === 0) {
+                                let alertHtml = `
+                                <div id="dynamic-toxic-alert" class="alert alert-danger alert-dismissible fade show border-0 rounded-0 mb-0" role="alert"
+                                     style="background: rgba(237, 73, 86, 0.1); color: #ed4956; font-size: 13px;">
+                                    <i class="bi bi-shield-x me-1"></i>
+                                    <strong>Message Blocked:</strong> Your message was flagged as potentially harmful and was <em>not</em> sent.
+                                    <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>`;
+                                $('.chat-header').after(alertHtml);
+                                setTimeout(() => $('#dynamic-toxic-alert').fadeOut(300, function(){ $(this).remove(); }), 5000);
+                            }
+                        }
+                    }
+                },
+                error: function() {
+                    submitBtn.prop('disabled', false);
+                    alert("Network error.");
+                }
+            });
+        });
+    });
 </script>
 {% endblock %}

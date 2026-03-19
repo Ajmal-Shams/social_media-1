@@ -355,6 +355,11 @@
                         } else {
                             if(res.error === "toxic_blocked") {
                                 alert("Blocked: Your content was flagged as highly toxic and has been removed. Your safety score has been penalized.");
+                            } else if(res.error === "banned") {
+                                // Score hit 20 threshold → show the full-screen ban overlay immediately
+                                if(typeof window.checkBanStatus === 'function') {
+                                    window.checkBanStatus();
+                                }
                             } else {
                                 alert("Failed to post.");
                             }
@@ -499,6 +504,11 @@
                                         // Auto dismiss after 5 seconds
                                         setTimeout(() => notifyContainer.find('.toxic-alert').fadeOut(300, function(){ $(this).remove(); }), 5000);
                                         
+                                    } else if(res.error === "banned") {
+                                        // Score just hit 20 → ban was issued. Show ban overlay immediately.
+                                        if(typeof window.checkBanStatus === 'function') {
+                                            window.checkBanStatus();
+                                        }
                                     } else {
                                         alert("Failed to add comment.");
                                     }

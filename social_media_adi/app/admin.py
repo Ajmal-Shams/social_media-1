@@ -1,4 +1,10 @@
 from django.contrib import admin
+import pandas as pd
+from django.http import HttpResponse
+from reportlab.lib.pagesizes import landscape, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 from .models import Posts, Comment, ReportedComments, Profile, CommentReport
 
 @admin.register(Posts)
@@ -13,9 +19,76 @@ class CommentAdmin(admin.ModelAdmin):
 class ReportedCommentsAdmin(admin.ModelAdmin):
     list_display = ['id', 'user', 'comment', 'feedback']
 
+def get_profile_dataframe(queryset):
+    data = []
+    for profile in queryset:
+        data.append({
+            'User ID': profile.user.id if profile.user else 'N/A',
+            'Username': profile.user.username if profile.user else 'Deleted User',
+            'Email': profile.user.email if profile.user else 'N/A',
+            'First Name': profile.user.first_name if profile.user else 'N/A',
+            'Last Name': profile.user.last_name if profile.user else 'N/A',
+            'Score': round(profile.score, 2),
+            'Ban Lvl': profile.ban_level,
+            'Ban Until': profile.ban_until.strftime("%Y-%m-%d %H:%M") if profile.ban_until else 'None',
+            'Last Active': profile.last_seen.strftime("%Y-%m-%d %H:%M") if profile.last_seen else 'Never',
+            'DOB': profile.dob.strftime("%Y-%m-%d") if profile.dob else 'N/A',
+        })
+    return pd.DataFrame(data)
+
+@admin.action(description="Download Selected as CSV")
+def export_as_csv(modeladmin, request, queryset):
+    df = get_profile_dataframe(queryset)
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="user_reports.csv"'
+    df.to_csv(response, index=False)
+    return response
+
+@admin.action(description="Download Selected as Excel")
+def export_as_excel(modeladmin, request, queryset):
+    df = get_profile_dataframe(queryset)
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="user_reports.xlsx"'
+    df.to_excel(response, index=False)
+    return response
+
+@admin.action(description="Download Selected as PDF")
+def export_as_pdf(modeladmin, request, queryset):
+    df = get_profile_dataframe(queryset)
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="user_reports.pdf"'
+
+    doc = SimpleDocTemplate(response, pagesize=landscape(A4))
+    elements = []
+
+    styles = getSampleStyleSheet()
+    title = Paragraph("CircleUp User Safety Report", styles['Title'])
+    elements.append(title)
+
+    # Convert DataFrame to list of lists (headers + rows), making sure everything is a string
+    data = [df.columns.values.tolist()] + df.astype(str).values.tolist()
+    
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+    
+    return response
+
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
     list_display = ['id', 'user', 'score']
+    actions = [export_as_csv, export_as_excel, export_as_pdf]
 
 @admin.register(CommentReport)
 class CommentReportAdmin(admin.ModelAdmin):

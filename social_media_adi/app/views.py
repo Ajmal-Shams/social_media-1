@@ -205,21 +205,57 @@ def chat_detail(request, user_id):
 @login_required(login_url='login')
 def send_message(request, user_id):
     if request.method == "POST":
+        from django.utils import timezone
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
         friend = User.objects.get(id=user_id)
         text = request.POST.get("text", "").strip()
         if text:
+            profile, _ = Profile.objects.get_or_create(user=request.user)
+
+            # --- Check existing ban first ---
+            if profile.ban_until and profile.ban_until > timezone.now():
+                secs_left = int((profile.ban_until - timezone.now()).total_seconds())
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": "banned", "ban_seconds": secs_left})
+                request.session['msg_flagged'] = True
+                return redirect('chat-detail', user_id=user_id)
+
             score = get_toxicity_score(text)
 
             if score > 0.5:
                 # Block the message — do NOT deliver it to the receiver
-                profile, _ = Profile.objects.get_or_create(user=request.user)
                 profile.score += score
+                profile.last_toxic_comment = timezone.now()
+
+                # Apply progressive ban if threshold crossed
+                if profile.score > 20:
+                    now = timezone.now()
+                    if profile.last_ban_applied and (now - profile.last_ban_applied).days < 4:
+                        profile.ban_level += 1
+                    ban_hours = profile.ban_level * 4
+                    profile.ban_until = now + timezone.timedelta(hours=ban_hours)
+                    profile.last_ban_applied = now
+                    profile.score = 0.0
+                    profile.save()
+                    if is_ajax:
+                        return JsonResponse({"success": False, "error": "banned",
+                                             "ban_seconds": ban_hours * 3600,
+                                             "ban_hours": ban_hours})
+                    request.session['msg_flagged'] = True
+                    return redirect('chat-detail', user_id=user_id)
+
                 profile.save()
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": "toxic_blocked"})
                 request.session['msg_flagged'] = True
                 return redirect('chat-detail', user_id=user_id)
 
             # Only create message if it passes the toxicity check
             Message.objects.create(sender=request.user, receiver=friend, text=text, score=score)
+            if is_ajax:
+                return JsonResponse({"success": True, "text": text})
+        if is_ajax:
+            return JsonResponse({"success": False, "error": "empty"})
         return redirect('chat-detail', user_id=user_id)
 from django.utils import timezone
 
