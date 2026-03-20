@@ -366,16 +366,40 @@ def create(request):
         
         is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+
+        # --- Check existing ban first ---
+        if profile.ban_until and profile.ban_until > timezone.now():
+            secs_left = int((profile.ban_until - timezone.now()).total_seconds())
+            if is_ajax:
+                return JsonResponse({"success": False, "error": "banned", "ban_seconds": secs_left})
+            return redirect('home')
+
         # Safety Check
         score = get_toxicity_score(text)
         
-        # Always allow post but track toxicity score
-        # Increase profile score if toxic
         if score > 0.5:
-            profile = Profile.objects.get(user=request.user)
             profile.score += score
+            profile.last_toxic_comment = timezone.now()
+
+            # Apply progressive ban if threshold crossed
+            if profile.score > 20:
+                now = timezone.now()
+                if profile.last_ban_applied and (now - profile.last_ban_applied).days < 4:
+                    profile.ban_level += 1
+                ban_hours = profile.ban_level * 4
+                profile.ban_until = now + timezone.timedelta(hours=ban_hours)
+                profile.last_ban_applied = now
+                profile.score = 0.0
+                profile.save()
+                if is_ajax:
+                    return JsonResponse({"success": False, "error": "banned",
+                                         "ban_seconds": ban_hours * 3600,
+                                         "ban_hours": ban_hours})
+                request.session['toxic_blocked'] = True
+                return redirect('home')
+
             profile.save()
-            # Hard block toxic posts as per user request "cannot post"
             request.session['toxic_blocked'] = True
             if is_ajax:
                 return JsonResponse({"success": False, "error": "toxic_blocked"})
@@ -471,9 +495,31 @@ def edit_post(request, post_id):
         post = Posts.objects.get(id=post_id, user=request.user)
         text = request.POST.get('caption', '')
         
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+
+        # --- Check existing ban first ---
+        if profile.ban_until and profile.ban_until > timezone.now():
+            return redirect('home')
+
         # Safety Check
         score = get_toxicity_score(text)
         if score > 0.5:
+            profile.score += score
+            profile.last_toxic_comment = timezone.now()
+
+            # Apply progressive ban if threshold crossed
+            if profile.score > 20:
+                now = timezone.now()
+                if profile.last_ban_applied and (now - profile.last_ban_applied).days < 4:
+                    profile.ban_level += 1
+                ban_hours = profile.ban_level * 4
+                profile.ban_until = now + timezone.timedelta(hours=ban_hours)
+                profile.last_ban_applied = now
+                profile.score = 0.0
+                profile.save()
+                return redirect('home')
+
+            profile.save()
             request.session['issues'] = True
             return redirect('home')
             
