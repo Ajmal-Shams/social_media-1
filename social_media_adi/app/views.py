@@ -35,8 +35,60 @@ except Exception as e:
     print(f"General error during ML initialization: {e}")
     WITH_ML = False
 
+# --- DYNAMIC OBFUSCATION DETECTOR ---
+TOXIC_PATTERNS = []
+
+if WITH_ML:
+    try:
+        df = pd.read_csv('dataset.csv')
+        neg_text = ' '.join(df[df['sentiment'] == 'negative']['text'].astype(str).tolist()).lower()
+        # Find all words with 3 or more letters
+        neg_words = list(set(re.findall(r'\b[a-z]{3,}\b', neg_text)))
+        
+        twt_words = tokenizer.texts_to_sequences(neg_words)
+        twt_words = pad_sequences(twt_words, maxlen=100, dtype='int32', value=0)
+        predictions = loaded_model.predict(twt_words, batch_size=32, verbose=0)
+        
+        dataset_toxic_words = []
+        for i, word in enumerate(neg_words):
+            if predictions[i][0] > 0.6:  # High toxicity based on the model
+                dataset_toxic_words.append(word)
+                
+        # Generate regex for each to handle spacing and symbol obfuscation
+        for word in dataset_toxic_words:
+            parts = []
+            i = 0
+            while i < len(word):
+                if i + 1 < len(word) and word[i:i+2] == 'ck':
+                    parts.append(r'c?[\W_]*k+')
+                    i += 2
+                else:
+                    parts.append(word[i] + '+')
+                    i += 1
+            pattern = r'(?:^|[^a-z])' + r'[\W_]*'.join(parts) + r'(?:[^a-z]|$)'
+            TOXIC_PATTERNS.append(re.compile(pattern, re.IGNORECASE))
+    except Exception as e:
+        print(f"Error compiling dynamic obfuscation detector: {e}")
+
+
 def get_toxicity_score(text):
-    if not WITH_ML or not text:
+    if not text:
+        return 0.0
+
+    # 1. Custom heuristic fallback for obfuscated dataset words
+    text_lower = text.lower()
+    # Normalize typical symbol obfuscations (e.g., sh*t -> shit, fuk -> fuk, @ss -> ass)
+    replacements = {'@': 'a', '$': 's', '0': 'o', '1': 'i', '!': 'i', '3': 'e', '*': 'i'}
+    text_normalized = text_lower
+    for k, v in replacements.items():
+        text_normalized = text_normalized.replace(k, v)
+
+    for pattern in TOXIC_PATTERNS:
+        if pattern.search(text_normalized):
+            return 1.0  # Max score if we found a dataset-verified toxic word
+
+    # 2. Existing ML scoring
+    if not WITH_ML:
         return 0.0
     try:
         twt = tokenizer.texts_to_sequences([text])
