@@ -400,6 +400,28 @@ def create(request):
             )
             db.save()
             
+            # Processing tags
+            tags_json = request.POST.get('tags', '[]')
+            import json
+            from .models import PostTag
+            tag_data = []
+            try:
+                tags = json.loads(tags_json)
+                for t in tags:
+                    tagged_user_id = t.get('user_id')
+                    x = t.get('x')
+                    y = t.get('y')
+                    if tagged_user_id and x is not None and y is not None:
+                        pt, _ = PostTag.objects.get_or_create(post=db, user_id=tagged_user_id, defaults={'x_coordinate': x, 'y_coordinate': y})
+                        tag_data.append({
+                            'username': pt.user.username,
+                            'x': pt.x_coordinate,
+                            'y': pt.y_coordinate,
+                            'profile_url': f"/profile/{pt.user.username}/"
+                        })
+            except Exception as e:
+                print("Error parsing tags:", e)
+            
             if is_ajax:
                 return JsonResponse({
                     "success": True,
@@ -413,7 +435,8 @@ def create(request):
                         "comment_count": 0,
                         "is_reel": is_reel,
                         "is_story": is_story,
-                        "is_video_file": db.is_video_file
+                        "is_video_file": db.is_video_file,
+                        "tags": tag_data
                     }
                 })
             return redirect('home')
@@ -486,13 +509,6 @@ def app_login(request):
             login(request, user)
             try:
                 profile = Profile.objects.get(user=user)
-
-                if profile.score > 20:
-                    warning_message = f"⚠️ Hi {user.username}, your profile score is {profile.score:.2f}. Please remove flagged comments before proceeding."
-
-                    return render(request, "login.html", {
-                        "warning": warning_message
-                    })
 
                 if profile.pic:
                     request.session['profile'] = str(profile.pic)
@@ -570,13 +586,18 @@ def profile(request, username=None):
     if is_self:
         incoming_requests = FriendRequest.objects.filter(to_user=request.user, status='pending')
 
+    # Tagged posts
+    tagged_posts = Posts.objects.filter(tags__user=viewed_user).distinct().order_by('-id')
+
     return render(request, "profile.html", {
         "viewed_user": viewed_user,
         "profile": profile_obj,
         'db': regular_posts,
         'reels_db': reels_posts,
+        'tagged_posts': tagged_posts,
         'posts_count': regular_posts.count(),
         'reels_count': reels_posts.count(),
+        'tagged_count': tagged_posts.count(),
         'followers_count': followers_count,
         'following_count': following_count,
         'is_self': is_self,
@@ -793,6 +814,15 @@ def search_users(request):
     if query:
         results = User.objects.filter(username__icontains=query).exclude(id=request.user.id)
     return render(request, "search_results.html", {"results": results, "query": query})
+
+@login_required(login_url='login')
+def search_users_api(request):
+    query = request.GET.get('q', '').strip()
+    if query:
+        users = User.objects.filter(username__icontains=query).exclude(id=request.user.id)[:10]
+        results = [{"id": u.id, "username": u.username, "avatar": f"https://ui-avatars.com/api/?name={u.username}&background=random"} for u in users]
+        return JsonResponse({"success": True, "users": results})
+    return JsonResponse({"success": True, "users": []})
 
 @login_required(login_url='login')
 def send_friend_request(request, user_id):

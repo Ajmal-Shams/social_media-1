@@ -265,9 +265,18 @@
                             <label for="image-upload" class="btn btn-primary btn-sm px-3" style="border-radius: 8px;">Select from computer</label>
                             <input type="file" id="image-upload" name="img" class="d-none" accept="image/*,video/*" required onchange="previewMedia(this)">
                         </div>
-                        <div id="imagePreview" class="d-none w-100 border-top">
-                            <img src="" id="previewImg" class="w-100 object-fit-cover d-none" style="max-height: 400px;">
+                        <div id="imagePreview" class="position-relative d-none w-100 border-top">
+                            <img src="" id="previewImg" class="w-100 object-fit-cover d-none" style="max-height: 400px; cursor: crosshair;">
                             <video id="previewVid" class="w-100 d-none" controls style="max-height: 400px; background: black;"></video>
+                            
+                            <!-- Tagging UI -->
+                            <div id="tagInputContainer" class="position-absolute d-none bg-white p-2 rounded shadow text-start" style="z-index: 10; width: 200px;">
+                                <input type="text" id="tagSearchInput" class="form-control form-control-sm mb-1" placeholder="Search user...">
+                                <ul class="list-group list-group-flush" id="tagSearchResults" style="max-height: 150px; overflow-y: auto;"></ul>
+                            </div>
+                            <div id="tagsOverlay" class="position-absolute top-0 start-0 w-100 h-100 pointer-events-none" style="pointer-events: none;"></div>
+                            <input type="hidden" name="tags" id="postTagsInput" value="[]">
+
                             <div class="p-3">
                                 <textarea name="caption" class="form-control border-0 shadow-none mb-2" rows="3" placeholder="Write a caption..." style="resize: none;"></textarea>
                                 <div class="d-flex gap-4">
@@ -345,6 +354,11 @@
                             $('#uploadArea').removeClass('d-none');
                             $('#imagePreview').addClass('d-none');
                             $('#modalFooter').addClass('d-none');
+                            
+                            currentTags = [];
+                            $('#postTagsInput').val('[]');
+                            $('#tagsOverlay').empty();
+                            $('#tagInputContainer').addClass('d-none');
                             
                             // Call page-specific handler if exists, else refresh
                             if (typeof addPostToFeed === 'function') {
@@ -558,6 +572,89 @@
                                 }
                             }
                         });
+                    });
+
+                    // Tagging Javascript Logic
+                    let currentTags = [];
+                    let pendingTagPos = {x: 0, y: 0};
+
+                    $('#previewImg').on('click', function(e) {
+                        // Calculate percentage coordinates
+                        const rect = this.getBoundingClientRect();
+                        const x = ((e.clientX - rect.left) / rect.width) * 100;
+                        const y = ((e.clientY - rect.top) / rect.height) * 100;
+                        
+                        pendingTagPos = {x: x, y: y};
+                        
+                        // Position the input container
+                        $('#tagInputContainer').css({
+                            left: e.offsetX + 'px',
+                            top: e.offsetY + 'px'
+                        }).removeClass('d-none');
+                        
+                        $('#tagSearchInput').val('').focus();
+                        $('#tagSearchResults').empty();
+                    });
+
+                    $(document).on('click', function(e) {
+                        if (!$(e.target).closest('#imagePreview').length) {
+                            $('#tagInputContainer').addClass('d-none');
+                        }
+                    });
+
+                    let tagSearchTimeout;
+                    $('#tagSearchInput').on('input', function() {
+                        clearTimeout(tagSearchTimeout);
+                        const query = $(this).val();
+                        if (query.length < 1) {
+                            $('#tagSearchResults').empty();
+                            return;
+                        }
+                        
+                        tagSearchTimeout = setTimeout(() => {
+                            $.get('/search-api/?q=' + encodeURIComponent(query), function(data) {
+                                if (data.success) {
+                                    let html = '';
+                                    data.users.forEach(u => {
+                                        html += `<li class="list-group-item list-group-item-action p-1 tag-user-select" style="cursor: pointer; font-size: 0.85rem;" data-id="${u.id}" data-username="${u.username}"><img src="${u.avatar}" class="rounded-circle me-1" width="20" height="20"> ${u.username}</li>`;
+                                    });
+                                    if(data.users.length === 0) html = '<li class="list-group-item p-1 text-muted text-center" style="font-size: 0.85rem;">No users found</li>';
+                                    $('#tagSearchResults').html(html);
+                                }
+                            });
+                        }, 300);
+                    });
+
+                    $(document).on('click', '.tag-user-select', function(e) {
+                        e.stopPropagation();
+                        const userId = $(this).data('id');
+                        const username = $(this).data('username');
+                        
+                        if (currentTags.find(t => t.user_id == userId)) {
+                            return;
+                        }
+                        
+                        currentTags.push({ user_id: userId, username: username, x: pendingTagPos.x, y: pendingTagPos.y });
+                        $('#postTagsInput').val(JSON.stringify(currentTags));
+                        
+                        const pill = $(`<span class="badge bg-dark rounded-pill py-1 px-2 position-absolute shadow-sm" style="left: ${pendingTagPos.x}%; top: ${pendingTagPos.y}%; transform: translate(-50%, -50%); opacity: 0.9; z-index: 5; pointer-events: auto;"><i class="bi bi-person-fill"></i> ${username} <i class="bi bi-x ms-1 remove-tag" style="cursor:pointer;" data-id="${userId}"></i></span>`);
+                        $('#tagsOverlay').append(pill);
+                        $('#tagInputContainer').addClass('d-none');
+                    });
+
+                    $(document).on('click', '.remove-tag', function(e) {
+                        e.stopPropagation();
+                        const userId = $(this).data('id');
+                        currentTags = currentTags.filter(t => t.user_id != userId);
+                        $('#postTagsInput').val(JSON.stringify(currentTags));
+                        $(this).parent().remove();
+                    });
+
+                    $('#create_modal').on('hidden.bs.modal', function () {
+                        currentTags = [];
+                        $('#postTagsInput').val('[]');
+                        $('#tagsOverlay').empty();
+                        $('#tagInputContainer').addClass('d-none');
                     });
                 });
             </script>

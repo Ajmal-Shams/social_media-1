@@ -169,11 +169,23 @@
                     {% endif %}
                 </header>
 
-                <div class="post-image-container">
+                <div class="post-image-container position-relative">
                     {% if post.is_video_file %}
                         <video src="http://127.0.0.1:8000/{{ post.image_path }}" class="w-100" controls style="max-height: 600px; background: black;"></video>
                     {% else %}
-                        <img src="http://127.0.0.1:8000/{{ post.image_path }}" alt="Post Content">
+                        <img src="http://127.0.0.1:8000/{{ post.image_path }}" alt="Post Content" class="w-100">
+                        {% if post.tags.count > 0 %}
+                        <button class="btn btn-dark btn-sm position-absolute bottom-0 start-0 m-2 rounded-circle shadow opacity-75 d-flex align-items-center justify-content-center toggle-tags-btn" style="width: 30px; height: 30px; z-index: 5;" onclick="toggleTags(this)">
+                            <i class="bi bi-person-fill"></i>
+                        </button>
+                        <div class="post-tags-container pointer-events-none d-none">
+                            {% for tag in post.tags.all %}
+                            <a href="{% url 'view_profile' tag.user.username %}" class="badge bg-dark rounded-pill py-1 px-2 position-absolute shadow-sm text-decoration-none text-white pe-auto" style="left: {{ tag.x_coordinate }}%; top: {{ tag.y_coordinate }}%; transform: translate(-50%, -50%); opacity: 0.9; pointer-events: auto;">
+                                {{ tag.user.username }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     {% endif %}
                 </div>
 
@@ -411,6 +423,10 @@
     alert("Warning: Your content was flagged for potentially harmful language. Your safety score has been updated.");
     {% endif %}
 
+    function toggleTags(btn) {
+        $(btn).siblings('.post-tags-container').toggleClass('d-none');
+    }
+
     function addPostToFeed(post) {
         if (post.is_story || post.is_reel) {
             location.reload();
@@ -419,7 +435,21 @@
 
         let mediaHtml = post.is_video_file ?
             `<video src="http://127.0.0.1:8000/${post.image_path}" class="w-100" controls style="max-height: 600px; background: black;"></video>` :
-            `<img src="http://127.0.0.1:8000/${post.image_path}" alt="Post Content">`;
+            `<img src="http://127.0.0.1:8000/${post.image_path}" alt="Post Content" class="w-100">`;
+
+        let tagsHtml = '';
+        if (!post.is_video_file && post.tags && post.tags.length > 0) {
+            tagsHtml = `
+            <button class="btn btn-dark btn-sm position-absolute bottom-0 start-0 m-2 rounded-circle shadow opacity-75 d-flex align-items-center justify-content-center toggle-tags-btn" style="width: 30px; height: 30px; z-index: 5;" onclick="toggleTags(this)">
+                <i class="bi bi-person-fill"></i>
+            </button>
+            <div class="post-tags-container pointer-events-none d-none">
+                ${post.tags.map(tag => `
+                <a href="${tag.profile_url}" class="badge bg-dark rounded-pill py-1 px-2 position-absolute shadow-sm text-decoration-none text-white" style="left: ${tag.x}%; top: ${tag.y}%; transform: translate(-50%, -50%); opacity: 0.9; pointer-events: auto;">
+                    ${tag.username}
+                </a>`).join('')}
+            </div>`;
+        }
 
         let newPostHtml = `
             <article class="post-card shadow-sm">
@@ -429,8 +459,9 @@
                         <span class="fw-bold">${post.username}</span>
                     </div>
                 </header>
-                <div class="post-image-container">
+                <div class="post-image-container position-relative">
                     ${mediaHtml}
+                    ${tagsHtml}
                 </div>
                 <div class="post-footer">
                     <div class="d-flex mb-2">

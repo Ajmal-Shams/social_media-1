@@ -73,6 +73,17 @@ class Posts(models.Model):
     def __str__(self):
         return f"{'Story' if self.is_story else 'Post'} {self.id} by {self.user.username if self.user else 'Deleted User'}"
 
+# Tagged users in a post (mimicking Instagram tags)
+class PostTag(models.Model):
+    post = models.ForeignKey(Posts, on_delete=models.CASCADE, related_name='tags')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tagged_in')
+    x_coordinate = models.FloatField()
+    y_coordinate = models.FloatField()
+
+    def __str__(self):
+        return f"{self.user.username} tagged in Post {self.post.id}"
+
+
 # Comment model (includes score)
 class Comment(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

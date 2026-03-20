@@ -26,6 +26,7 @@ urlpatterns = [
     path("report-comments/<int:id>",report_comment,name="report-comment"),
     path('like-post/<int:post_id>/', like_post, name='like-post'),
     path('search/', search_users, name='search'),
+    path('search-api/', search_users_api, name='search_users_api'),
     path('profile/<str:username>/', profile, name='view_profile'),
     path('friend-request/send/<int:user_id>/', send_friend_request, name='send_friend_request'),
     path('friend-request/accept/<int:request_id>/', accept_friend_request, name='accept_friend_request'),

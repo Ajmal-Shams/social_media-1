@@ -85,10 +85,17 @@ def export_as_pdf(modeladmin, request, queryset):
     
     return response
 
+@admin.action(description="Lift Ban for Selected Users")
+def lift_user_ban(modeladmin, request, queryset):
+    # Reset ban fields and reset safety score
+    queryset.update(ban_until=None, ban_level=1, score=0.0)
+
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ['id', 'user', 'score']
-    actions = [export_as_csv, export_as_excel, export_as_pdf]
+    list_display = ['id', 'user', 'score', 'ban_until', 'ban_level']
+    search_fields = ['user__username']
+    list_filter = ['ban_level']
+    actions = [export_as_csv, export_as_excel, export_as_pdf, lift_user_ban]
 
 @admin.register(CommentReport)
 class CommentReportAdmin(admin.ModelAdmin):
