@@ -151,7 +151,7 @@ from django.contrib.auth.decorators import login_required
 # Chat views
 @login_required(login_url='login')
 def chat_list(request):
-    from datetime import datetime as dt
+    from datetime import datetime as dt, timezone as dt_timezone
     # List all users except self
     users = list(User.objects.exclude(id=request.user.id))
     user_profiles = {u.id: Profile.objects.filter(user=u).first() for u in users}
@@ -169,7 +169,7 @@ def chat_list(request):
     # Sort: most recently messaged users appear first; users with no messages go to the bottom
     users_sorted = sorted(
         users,
-        key=lambda u: user_last_msg.get(u.id) or dt(1970, 1, 1, tzinfo=timezone.utc),
+        key=lambda u: user_last_msg.get(u.id) or dt(1970, 1, 1, tzinfo=dt_timezone.utc),
         reverse=True
     )
 
