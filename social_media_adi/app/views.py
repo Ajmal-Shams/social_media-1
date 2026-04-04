@@ -476,27 +476,28 @@ def create(request):
             )
             db.save()
             
-            # Processing tags
+            # Processing tags for regular posts/reels only (stories should not appear in tagged posts)
             tags_json = request.POST.get('tags', '[]')
             import json
             from .models import PostTag
             tag_data = []
-            try:
-                tags = json.loads(tags_json)
-                for t in tags:
-                    tagged_user_id = t.get('user_id')
-                    x = t.get('x')
-                    y = t.get('y')
-                    if tagged_user_id and x is not None and y is not None:
-                        pt, _ = PostTag.objects.get_or_create(post=db, user_id=tagged_user_id, defaults={'x_coordinate': x, 'y_coordinate': y})
-                        tag_data.append({
-                            'username': pt.user.username,
-                            'x': pt.x_coordinate,
-                            'y': pt.y_coordinate,
-                            'profile_url': f"/profile/{pt.user.username}/"
-                        })
-            except Exception as e:
-                print("Error parsing tags:", e)
+            if not is_story:
+                try:
+                    tags = json.loads(tags_json)
+                    for t in tags:
+                        tagged_user_id = t.get('user_id')
+                        x = t.get('x')
+                        y = t.get('y')
+                        if tagged_user_id and x is not None and y is not None:
+                            pt, _ = PostTag.objects.get_or_create(post=db, user_id=tagged_user_id, defaults={'x_coordinate': x, 'y_coordinate': y})
+                            tag_data.append({
+                                'username': pt.user.username,
+                                'x': pt.x_coordinate,
+                                'y': pt.y_coordinate,
+                                'profile_url': f"/profile/{pt.user.username}/"
+                            })
+                except Exception as e:
+                    print("Error parsing tags:", e)
             
             if is_ajax:
                 return JsonResponse({
@@ -685,7 +686,7 @@ def profile(request, username=None):
         incoming_requests = FriendRequest.objects.filter(to_user=request.user, status='pending')
 
     # Tagged posts
-    tagged_posts = Posts.objects.filter(tags__user=viewed_user).distinct().order_by('-id')
+    tagged_posts = Posts.objects.filter(tags__user=viewed_user, is_story=False).distinct().order_by('-id')
 
     return render(request, "profile.html", {
         "viewed_user": viewed_user,
@@ -1017,7 +1018,13 @@ def notifications(request):
 def reels(request):
     # Fetch only Reels
     all_reels = Posts.objects.filter(is_reel=True).order_by('-created')
-    return render(request, "reels.html", {"reels": all_reels})
+    issues = request.session.pop('issues', False)
+    toxic_blocked = request.session.pop('toxic_blocked', False)
+    return render(request, "reels.html", {
+        "reels": all_reels,
+        "issues": issues,
+        "toxic_blocked": toxic_blocked,
+    })
 
 
 @login_required(login_url='login')
@@ -1040,8 +1047,12 @@ def settings_page(request):
     message = None
     if request.method == 'POST':
         target_user_id = request.POST.get('user_id')
-        action = request.POST.get('action')          # 'increase', 'decrease', 'reset', 'set'
+        action = request.POST.get('action')          # 'increase', 'decrease', 'reset', 'set', 'manual_ban', 'remove_ban'
         amount = float(request.POST.get('amount', 1.0))
+        try:
+            ban_hours = int(request.POST.get('ban_hours', 4) or 4)
+        except (TypeError, ValueError):
+            ban_hours = 4
 
         try:
             target_user = User.objects.get(id=target_user_id)
@@ -1063,6 +1074,13 @@ def settings_page(request):
                 profile_obj.ban_until = None
                 profile_obj.ban_level = 1  # Reset escalation for testing
                 profile_obj.score = 0.0
+            elif action == 'manual_ban':
+                ban_hours = max(1, ban_hours)
+                now = timezone.now()
+                profile_obj.ban_until = now + timezone.timedelta(hours=ban_hours)
+                profile_obj.last_ban_applied = now
+                # Keep level aligned with 4-hour step UI and overlay labels.
+                profile_obj.ban_level = max(1, (ban_hours + 3) // 4)
 
             profile_obj.save()
 

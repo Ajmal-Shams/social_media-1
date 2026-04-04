@@ -126,6 +126,10 @@
                 <button class="action-btn btn-minus" onclick="adjustScore({{ u.id }}, 'decrease')">− Decrease</button>
                 <button class="action-btn btn-set" onclick="adjustScore({{ u.id }}, 'set')">↑ Set To</button>
                 <button class="action-btn btn-reset" onclick="adjustScore({{ u.id }}, 'reset')">↺ Reset</button>
+                {% if is_admin %}
+                <input type="number" id="ban-hours-{{ u.id }}" value="4" min="1" step="1" class="text-center" title="Ban hours">
+                <button class="action-btn btn-ban" onclick="adjustScore({{ u.id }}, 'manual_ban')">Ban (hrs)</button>
+                {% endif %}
                 {% if is_admin and u.banned %}
                 <button class="action-btn btn-ban" onclick="adjustScore({{ u.id }}, 'remove_ban')">🚫 Remove Ban</button>
                 {% endif %}
@@ -151,6 +155,8 @@
 <script>
 function adjustScore(userId, action) {
     const amount = parseFloat(document.getElementById('amount-' + userId).value) || 1;
+    const banHoursInput = document.getElementById('ban-hours-' + userId);
+    const banHours = banHoursInput ? (parseInt(banHoursInput.value, 10) || 4) : 4;
     const csrf = '{{ csrf_token }}';
     const scoreEl = document.getElementById('score-' + userId);
 
@@ -161,12 +167,12 @@ function adjustScore(userId, action) {
             'X-CSRFToken': csrf,
             'X-Requested-With': 'XMLHttpRequest'
         },
-        body: `user_id=${userId}&action=${action}&amount=${amount}`
+        body: `user_id=${userId}&action=${action}&amount=${amount}&ban_hours=${banHours}`
     })
     .then(r => r.json())
     .then(res => {
         if (res.success) {
-            if (res.action === 'remove_ban') {
+            if (res.action === 'remove_ban' || res.action === 'manual_ban') {
                 // Reload so ban overlay disappears and button is hidden
                 location.reload();
                 return;

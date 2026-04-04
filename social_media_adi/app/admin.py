@@ -5,6 +5,7 @@ from reportlab.lib.pagesizes import landscape, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from django.utils import timezone
 from .models import Posts, Comment, ReportedComments, Profile, CommentReport
 
 @admin.register(Posts)
@@ -90,12 +91,22 @@ def lift_user_ban(modeladmin, request, queryset):
     # Reset ban fields and reset safety score
     queryset.update(ban_until=None, ban_level=1, score=0.0)
 
+@admin.action(description="Manual Ban: 4 hours")
+def manual_ban_4h(modeladmin, request, queryset):
+    now = timezone.now()
+    queryset.update(ban_until=now + timezone.timedelta(hours=4), ban_level=1, last_ban_applied=now)
+
+@admin.action(description="Manual Ban: 24 hours")
+def manual_ban_24h(modeladmin, request, queryset):
+    now = timezone.now()
+    queryset.update(ban_until=now + timezone.timedelta(hours=24), ban_level=6, last_ban_applied=now)
+
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
     list_display = ['id', 'user', 'score', 'ban_until', 'ban_level']
     search_fields = ['user__username']
     list_filter = ['ban_level']
-    actions = [export_as_csv, export_as_excel, export_as_pdf, lift_user_ban]
+    actions = [export_as_csv, export_as_excel, export_as_pdf, manual_ban_4h, manual_ban_24h, lift_user_ban]
 
 @admin.register(CommentReport)
 class CommentReportAdmin(admin.ModelAdmin):

@@ -83,6 +83,16 @@
 
 <div class="reels-wrapper">
     <div class="reels-container">
+        {% if issues %}
+        <div class="alert alert-danger m-3" role="alert">
+            <strong>Post Blocked:</strong> Your caption contains potentially harmful language.
+        </div>
+        {% endif %}
+        {% if toxic_blocked %}
+        <div class="alert alert-warning m-3" role="alert">
+            <strong>Safety Notice:</strong> Your content was flagged and was not posted.
+        </div>
+        {% endif %}
         {% for reel in reels %}
         <div class="reel-item" id="reel-{{ reel.id }}">
             {% if reel.is_video_file %}
@@ -253,12 +263,5 @@
         observer.observe(item);
     });
 
-    // Handle session issues (toxiticy warning)
-    {% if request.session.issues %}
-        alert("Warning: Your content was flagged for potentially harmful language. Your safety score has been updated.");
-        {% if not request.user.is_authenticated %}
-            // If they were logged out or something, but usually handled by views
-        {% endif %}
-    {% endif %}
 </script>
 {% endblock %}
