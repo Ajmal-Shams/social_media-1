@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_protect
 import pandas as pd
 import numpy as np
 import re
-from .models import Comment, Profile, ReportedComments, Posts, Friend, Message, FriendRequest, CommentReport
+from .models import Comment, Profile, ReportedComments, Posts, Friend, Message, FriendRequest, CommentReport, PostTag
 from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 
@@ -476,28 +476,36 @@ def create(request):
             )
             db.save()
             
-            # Processing tags for regular posts/reels only (stories should not appear in tagged posts)
+            # Processing tags (stories are filtered out from tagged-post grids elsewhere)
             tags_json = request.POST.get('tags', '[]')
             import json
             from .models import PostTag
             tag_data = []
-            if not is_story:
-                try:
-                    tags = json.loads(tags_json)
-                    for t in tags:
-                        tagged_user_id = t.get('user_id')
-                        x = t.get('x')
-                        y = t.get('y')
-                        if tagged_user_id and x is not None and y is not None:
-                            pt, _ = PostTag.objects.get_or_create(post=db, user_id=tagged_user_id, defaults={'x_coordinate': x, 'y_coordinate': y})
-                            tag_data.append({
-                                'username': pt.user.username,
-                                'x': pt.x_coordinate,
-                                'y': pt.y_coordinate,
-                                'profile_url': f"/profile/{pt.user.username}/"
-                            })
-                except Exception as e:
-                    print("Error parsing tags:", e)
+            try:
+                tags = json.loads(tags_json)
+                for t in tags:
+                    tagged_user_id = t.get('user_id')
+                    x = t.get('x')
+                    y = t.get('y')
+                    if tagged_user_id and x is not None and y is not None:
+                        pt, _ = PostTag.objects.get_or_create(post=db, user_id=tagged_user_id, defaults={'x_coordinate': x, 'y_coordinate': y})
+                        # For story tags, treat each tag as a notification item and reset to unread.
+                        if db.is_story:
+                            if pt.is_read:
+                                pt.is_read = False
+                            # Keep coordinates fresh if a tag was re-positioned.
+                            if pt.x_coordinate != x or pt.y_coordinate != y:
+                                pt.x_coordinate = x
+                                pt.y_coordinate = y
+                            pt.save(update_fields=['is_read', 'x_coordinate', 'y_coordinate'])
+                        tag_data.append({
+                            'username': pt.user.username,
+                            'x': pt.x_coordinate,
+                            'y': pt.y_coordinate,
+                            'profile_url': f"/profile/{pt.user.username}/"
+                        })
+            except Exception as e:
+                print("Error parsing tags:", e)
             
             if is_ajax:
                 return JsonResponse({
@@ -1005,13 +1013,29 @@ def remove_friend(request, user_id):
 
 @login_required(login_url='login')
 def notifications(request):
-    """Show all pending incoming friend requests for the logged-in user."""
+    """Show follow requests + story tag notifications for the logged-in user."""
     pending_requests = FriendRequest.objects.filter(
         to_user=request.user, status='pending'
     ).select_related('from_user').order_by('-created')
+
+    story_tag_base_qs = PostTag.objects.filter(
+        user=request.user,
+        post__is_story=True,
+    ).exclude(post__user=request.user)
+
+    story_tag_notifications = list(
+        story_tag_base_qs.select_related('post__user').order_by('-post__created')[:20]
+    )
+    story_tag_unread_count = story_tag_base_qs.filter(is_read=False).count()
+
+    # Instagram-like behavior: opening notifications marks current story-tag notifications as read.
+    story_tag_base_qs.filter(is_read=False).update(is_read=True)
+
     return render(request, 'notifications.html', {
         'pending_requests': pending_requests,
         'pending_count': pending_requests.count(),
+        'story_tag_notifications': story_tag_notifications,
+        'story_tag_count': story_tag_unread_count,
     })
 
 @login_required(login_url='login')

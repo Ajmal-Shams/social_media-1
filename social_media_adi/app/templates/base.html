@@ -62,12 +62,22 @@
             font-weight: 500;
             font-size: 14px;
         }
+        #globalNotice {
+            position: fixed;
+            top: 72px;
+            right: 16px;
+            z-index: 11000;
+            min-width: 280px;
+            max-width: 420px;
+            display: none;
+        }
     </style>
 
     {% block extra_css %}{% endblock %}
 
 </head>
 <body>
+    <div id="globalNotice"></div>
     <!-- ===== UNIVERSAL BAN OVERLAY (JS-driven, works on every page) ===== -->
     <div id="banOverlay" style="
         display:none; position:fixed; inset:0; z-index:99999;
@@ -305,6 +315,29 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        function showGlobalNotice(kind, message) {
+            const el = document.getElementById('globalNotice');
+            if (!el) return;
+            const alertClass = kind === 'danger' ? 'alert-danger' : (kind === 'warning' ? 'alert-warning' : 'alert-info');
+            el.innerHTML = `
+                <div class="alert ${alertClass} alert-dismissible fade show shadow" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            el.style.display = 'block';
+            setTimeout(() => {
+                const alertNode = el.querySelector('.alert');
+                if (alertNode) {
+                    alertNode.classList.remove('show');
+                    setTimeout(() => {
+                        el.innerHTML = '';
+                        el.style.display = 'none';
+                    }, 250);
+                }
+            }, 5000);
+        }
+
         function previewMedia(input) {
             if (input.files && input.files[0]) {
                 const file = input.files[0];
@@ -368,20 +401,20 @@
                             }
                         } else {
                             if(res.error === "toxic_blocked") {
-                                alert("Blocked: Your content was flagged as highly toxic and has been removed. Your safety score has been penalized.");
+                                showGlobalNotice('warning', '<strong>Safety Notice:</strong> Your content was flagged and was not posted.');
                             } else if(res.error === "banned") {
                                 // Score hit 20 threshold → show the full-screen ban overlay immediately
                                 if(typeof window.checkBanStatus === 'function') {
                                     window.checkBanStatus();
                                 }
                             } else {
-                                alert("Failed to post.");
+                                showGlobalNotice('danger', 'Failed to post. Please try again.');
                             }
                         }
                     },
                     error: function() {
                         shareBtn.text('Share').css('pointer-events', 'auto');
-                        alert("Network error.");
+                        showGlobalNotice('danger', 'Network error. Please try again.');
                     }
                 });
             });

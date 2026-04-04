@@ -79,6 +79,7 @@ class PostTag(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tagged_in')
     x_coordinate = models.FloatField()
     y_coordinate = models.FloatField()
+    is_read = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.username} tagged in Post {self.post.id}"
