@@ -5,6 +5,7 @@ from django.http import HttpResponse, JsonResponse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 import os
+from uuid import uuid4
 from django.views.decorators.csrf import csrf_protect
 import pandas as pd
 import numpy as np
@@ -107,28 +108,23 @@ def home(request):
     # Only show regular posts in the main feed (exclude reels)
     db = Posts.objects.filter(is_story=False, is_reel=False).order_by("-id")
     
-    # Get user's own active story (last 24 hours)
+    # Get user's own active stories (last 24 hours)
     last_24h = timezone.now() - timezone.timedelta(hours=24)
-    own_story = Posts.objects.filter(user=request.user, is_story=True, created__gte=last_24h).order_by('-created').first()
+    own_stories = list(
+        Posts.objects.filter(user=request.user, is_story=True, created__gte=last_24h)
+        .order_by('-created')
+    )
 
     # Get stories from friends (last 24 hours)
     friends = Friend.objects.filter(user=request.user)
     friends_list = [f.friend for f in friends]
     
     last_24h = timezone.now() - timezone.timedelta(hours=24)
-    stories_all = Posts.objects.filter(
+    stories = list(Posts.objects.filter(
         user__in=friends_list, 
         is_story=True, 
         created__gte=last_24h
-    ).select_related('user').order_by('-created')
-    
-    # Portable distinct by user
-    stories = []
-    seen_users = set()
-    for s in stories_all:
-        if s.user_id not in seen_users:
-            stories.append(s)
-            seen_users.add(s.user_id)
+    ).select_related('user').order_by('-created'))
     
     # Suggest users to follow
     suggestions = User.objects.exclude(id=request.user.id).exclude(
@@ -169,7 +165,7 @@ def home(request):
 
     return render(request, "home.html", {
         "db": db,
-        "own_story": own_story,
+        "own_stories": own_stories,
         "stories": stories,
         "suggestions": suggestions,
         "issues": issues,
@@ -460,15 +456,17 @@ def create(request):
         if image:
             # Ensure uploads directory exists
             os.makedirs(os.path.join(os.getcwd(), 'uploads'), exist_ok=True)
-            
-            file_path = os.path.join(os.getcwd(), 'uploads', image.name)
+
+            original_name = os.path.basename(image.name)
+            unique_name = f"{uuid4().hex}_{original_name}"
+            file_path = os.path.join(os.getcwd(), 'uploads', unique_name)
             with open(file_path, 'wb+') as destination:
                 for chunk in image.chunks():
                     destination.write(chunk)
             
             db = Posts(
                 user=user, 
-                image_path="uploads/" + image.name, 
+                image_path="uploads/" + unique_name,
                 text=text,
                 is_story=is_story,
                 is_reel=is_reel,

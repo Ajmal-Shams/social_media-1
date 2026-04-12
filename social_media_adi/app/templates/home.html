@@ -92,38 +92,39 @@
         <!-- Stories -->
         <div class="d-flex gap-3 overflow-x-auto pb-4 mb-2 no-scrollbar">
             <div class="text-center" style="min-width: 74px; cursor: pointer;"
-                {% if own_story %}
-                    onclick="openStory('http://127.0.0.1:8000/{{ own_story.image_path|escapejs }}', '{{ request.user.username|escapejs }}', '{{ own_story.image_path|lower|escapejs }}')"
-                {% else %}
-                    onclick="$('#create_modal').modal('show'); $('#isStorySwitch').prop('checked', true);"
-                {% endif %}
+                onclick="$('#create_modal').modal('show'); $('#isStorySwitch').prop('checked', true);"
             >
-                <div class="story-ring{% if own_story %} border border-danger{% else %} border border-secondary{% endif %}" style="position:relative;">
-                    {% if own_story %}
-                        {# Story uploaded — show story thumbnail; clicking opens story viewer #}
-                        {% with path=own_story.image_path|lower %}
-                        {% if ".mp4" in path or ".webm" in path or ".mov" in path %}
-                            <video src="http://127.0.0.1:8000/{{ own_story.image_path }}" class="story-img" style="object-fit:cover;" muted preload="metadata"></video>
-                        {% else %}
-                            <img src="http://127.0.0.1:8000/{{ own_story.image_path }}" class="story-img"
-                                 onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
-                        {% endif %}
-                        {% endwith %}
-                        {# "+" add indicator in top-right corner #}
-                        <span style="position:absolute;bottom:2px;right:2px;width:18px;height:18px;background:#0095f6;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white;border:2px solid white;line-height:1;">+</span>
-                    {% elif request.session.profile and request.session.profile != "None" %}
-                        {# No story — show profile pic #}
+                <div class="story-ring border border-secondary" style="position:relative;">
+                    {% if request.session.profile and request.session.profile != "None" %}
                         <img src="http://127.0.0.1:8000/{{request.session.profile}}" class="story-img"
                              onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
                     {% else %}
-                        {# No story, no profile pic — show person icon #}
                         <div class="story-img bg-light d-flex align-items-center justify-content-center text-muted">
                             <i class="bi bi-person-circle fs-4"></i>
                         </div>
                     {% endif %}
+                    <span style="position:absolute;bottom:2px;right:2px;width:18px;height:18px;background:#0095f6;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:white;border:2px solid white;line-height:1;">+</span>
+                </div>
+                <div class="small mt-1 text-truncate">Add Story</div>
+            </div>
+
+            {% for story in own_stories %}
+            <div class="text-center" style="min-width: 74px; cursor: pointer;"
+                 onclick="openStory('http://127.0.0.1:8000/{{ story.image_path|escapejs }}', '{{ request.user.username|escapejs }}', '{{ story.image_path|lower|escapejs }}')">
+                <div class="story-ring border border-danger" style="position:relative;">
+                    {% with path=story.image_path|lower %}
+                    {% if ".mp4" in path or ".webm" in path or ".mov" in path %}
+                        <video src="http://127.0.0.1:8000/{{ story.image_path }}" class="story-img" style="object-fit:cover;" muted preload="metadata"></video>
+                    {% else %}
+                        <img src="http://127.0.0.1:8000/{{ story.image_path }}" class="story-img"
+                             onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
+                    {% endif %}
+                    {% endwith %}
                 </div>
                 <div class="small mt-1 text-truncate">Your Story</div>
             </div>
+            {% endfor %}
+
             {% for story in stories %}
             <div class="text-center" style="min-width: 74px; cursor: pointer;"
                  onclick="openStory('http://127.0.0.1:8000/{{ story.image_path }}', '{{ story.user.username }}', '{{ story.image_path|lower }}')">
