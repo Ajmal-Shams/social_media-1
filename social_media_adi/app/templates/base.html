@@ -369,6 +369,11 @@
                 if ($('#image-upload').val() === '') return;
                 e.preventDefault();
                 let formData = new FormData(this);
+                const createMode = $(this).attr('data-create-mode');
+                if (createMode === 'story') {
+                    formData.set('is_story', 'on');
+                    formData.delete('is_reel');
+                }
                 let shareBtn = $('#shareBtn');
                 shareBtn.text('Sharing...').css('pointer-events', 'none');
                 
@@ -422,6 +427,7 @@
         // Reset create modal state when it closes
         $('#create_modal').on('hidden.bs.modal', function() {
             $('#postForm')[0].reset();
+            $('#postForm').removeAttr('data-create-mode');
             $('#isStorySwitch').prop('checked', false);
             $('#isReelSwitch').prop('checked', false);
             $('#uploadArea').removeClass('d-none');

@@ -92,7 +92,7 @@
         <!-- Stories -->
         <div class="d-flex gap-3 overflow-x-auto pb-4 mb-2 no-scrollbar">
             <div class="text-center" style="min-width: 74px; cursor: pointer;"
-                onclick="$('#create_modal').modal('show'); $('#isStorySwitch').prop('checked', true);"
+                onclick="$('#create_modal').modal('show'); $('#postForm').attr('data-create-mode','story'); $('#isStorySwitch').prop('checked', true); $('#isReelSwitch').prop('checked', false);"
             >
                 <div class="story-ring border border-secondary" style="position:relative;">
                     {% if request.session.profile and request.session.profile != "None" %}
@@ -108,28 +108,36 @@
                 <div class="small mt-1 text-truncate">Add Story</div>
             </div>
 
-            {% for story in own_stories %}
+            {% if own_stories %}
             <div class="text-center" style="min-width: 74px; cursor: pointer;"
-                 onclick="openStory('http://127.0.0.1:8000/{{ story.image_path|escapejs }}', '{{ request.user.username|escapejs }}', '{{ story.image_path|lower|escapejs }}')">
+                 onclick="openStoryGroup([
+                    {% for s in own_stories %}
+                    {src: 'http://127.0.0.1:8000/{{ s.image_path|escapejs }}', pathLower: '{{ s.image_path|lower|escapejs }}'}{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                 ], '{{ request.user.username|escapejs }}')">
                 <div class="story-ring border border-danger" style="position:relative;">
-                    {% with path=story.image_path|lower %}
+                    {% with path=own_stories.0.image_path|lower %}
                     {% if ".mp4" in path or ".webm" in path or ".mov" in path %}
-                        <video src="http://127.0.0.1:8000/{{ story.image_path }}" class="story-img" style="object-fit:cover;" muted preload="metadata"></video>
+                        <video src="http://127.0.0.1:8000/{{ own_stories.0.image_path }}" class="story-img" style="object-fit:cover;" muted preload="metadata"></video>
                     {% else %}
-                        <img src="http://127.0.0.1:8000/{{ story.image_path }}" class="story-img"
+                        <img src="http://127.0.0.1:8000/{{ own_stories.0.image_path }}" class="story-img"
                              onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name={{ request.user.username }}&background=random&bold=true';">
                     {% endif %}
                     {% endwith %}
                 </div>
                 <div class="small mt-1 text-truncate">Your Story</div>
             </div>
-            {% endfor %}
+            {% endif %}
 
-            {% for story in stories %}
+            {% for group in story_groups %}
             <div class="text-center" style="min-width: 74px; cursor: pointer;"
-                 onclick="openStory('http://127.0.0.1:8000/{{ story.image_path }}', '{{ story.user.username }}', '{{ story.image_path|lower }}')">
+                 onclick="openStoryGroup([
+                    {% for s in group.stories %}
+                    {src: 'http://127.0.0.1:8000/{{ s.image_path|escapejs }}', pathLower: '{{ s.image_path|lower|escapejs }}'}{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                 ], '{{ group.user.username|escapejs }}')">
                 <div class="story-ring">
-                    {% with prof=story.user.profile_set.first %}
+                    {% with prof=group.user.profile_set.first %}
                     {% if prof and prof.pic and prof.pic != "None" %}
                         <img src="http://127.0.0.1:8000/{{prof.pic}}" class="story-img">
                     {% else %}
@@ -139,7 +147,7 @@
                     {% endif %}
                     {% endwith %}
                 </div>
-                <div class="small mt-1 text-truncate">{{ story.user.username }}</div>
+                <div class="small mt-1 text-truncate">{{ group.user.username }}</div>
             </div>
             {% endfor %}
         </div>
@@ -308,8 +316,7 @@
 <!-- Story Viewer Overlay -->
 <div id="storyViewer" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
     <!-- Progress bar -->
-    <div style="position:absolute; top:0; left:0; right:0; height:3px; background:rgba(255,255,255,0.3);">
-        <div id="storyProgress" style="height:100%; background:white; width:0%; transition:width linear;"></div>
+    <div id="storyProgressBars" style="position:absolute; top:0; left:0; right:0; height:3px; display:flex; gap:3px; padding:0 4px;">
     </div>
     <!-- Header -->
     <div style="position:absolute; top:12px; left:0; right:0; display:flex; align-items:center; padding:0 16px; z-index:10;">
@@ -330,18 +337,39 @@
 
 <script>
     let storyTimer = null;
+    let storyQueue = [];
+    let storyIndex = 0;
+    let storyOwner = '';
     const STORY_DURATION = 5000; // 5 seconds
 
-    function openStory(src, username, pathLower) {
-        const viewer = document.getElementById('storyViewer');
-        const img = document.getElementById('storyImage');
-        const vid = document.getElementById('storyVideo');
-        const usernameEl = document.getElementById('storyUsername');
-        const progress = document.getElementById('storyProgress');
+    function openStoryGroup(stories, username) {
+        if (!stories || stories.length === 0) return;
+        storyQueue = stories;
+        storyIndex = 0;
+        storyOwner = username;
 
+        const viewer = document.getElementById('storyViewer');
+        const usernameEl = document.getElementById('storyUsername');
         usernameEl.textContent = username;
         viewer.style.display = 'flex';
         document.body.style.overflow = 'hidden';
+
+        const bars = document.getElementById('storyProgressBars');
+        bars.innerHTML = stories.map((_, idx) =>
+            `<div style="flex:1; background:rgba(255,255,255,0.3); height:100%;"><div id="storyProgress-${idx}" style="height:100%; width:0%; background:white; transition:none;"></div></div>`
+        ).join('');
+
+        showStoryAt(storyIndex);
+    }
+
+    function showStoryAt(index) {
+        if (!storyQueue.length) return;
+        storyIndex = index;
+
+        const img = document.getElementById('storyImage');
+        const vid = document.getElementById('storyVideo');
+        const story = storyQueue[index];
+        const pathLower = (story.pathLower || '').toLowerCase();
 
         // Detect if video or image
         const isVideo = pathLower.endsWith('.mp4') || pathLower.endsWith('.webm') ||
@@ -350,44 +378,78 @@
 
         img.style.display = 'none';
         vid.style.display = 'none';
-        progress.style.transition = 'none';
-        progress.style.width = '0%';
+
+        for (let i = 0; i < storyQueue.length; i++) {
+            const seg = document.getElementById('storyProgress-' + i);
+            if (!seg) continue;
+            seg.style.transition = 'none';
+            seg.style.width = i < index ? '100%' : '0%';
+        }
 
         if (isVideo) {
-            vid.src = src;
+            vid.src = story.src;
             vid.style.display = 'block';
             vid.play().catch(() => {});
         } else {
-            img.src = src;
+            img.src = story.src;
             img.style.display = 'block';
         }
 
-        // Auto-close after duration
+        // Auto-advance after duration
+        const activeSeg = document.getElementById('storyProgress-' + index);
         clearTimeout(storyTimer);
-        setTimeout(() => {
-            progress.style.transition = 'width ' + STORY_DURATION + 'ms linear';
-            progress.style.width = '100%';
-        }, 50);
-        storyTimer = setTimeout(closeStory, STORY_DURATION);
+        if (activeSeg) {
+            setTimeout(() => {
+                activeSeg.style.transition = 'width ' + STORY_DURATION + 'ms linear';
+                activeSeg.style.width = '100%';
+            }, 50);
+        }
+        storyTimer = setTimeout(nextStory, STORY_DURATION);
+    }
+
+    function nextStory() {
+        if (storyIndex < storyQueue.length - 1) {
+            showStoryAt(storyIndex + 1);
+        } else {
+            closeStory();
+        }
+    }
+
+    function prevStory() {
+        if (storyIndex > 0) {
+            showStoryAt(storyIndex - 1);
+        }
     }
 
     function closeStory() {
         clearTimeout(storyTimer);
         const viewer = document.getElementById('storyViewer');
         const vid = document.getElementById('storyVideo');
-        const progress = document.getElementById('storyProgress');
+        const bars = document.getElementById('storyProgressBars');
         vid.pause();
         vid.src = '';
         document.getElementById('storyImage').src = '';
-        progress.style.transition = 'none';
-        progress.style.width = '0%';
+        bars.innerHTML = '';
+        storyQueue = [];
+        storyIndex = 0;
+        storyOwner = '';
         viewer.style.display = 'none';
         document.body.style.overflow = '';
     }
 
-    // Close on backdrop click
+    // Backdrop closes, left/right tap navigates stories.
     document.getElementById('storyViewer').addEventListener('click', function(e) {
-        if (e.target === this) closeStory();
+        if (e.target === this) {
+            closeStory();
+            return;
+        }
+        const rect = this.getBoundingClientRect();
+        const isLeftTap = e.clientX < rect.width / 2;
+        if (isLeftTap) {
+            prevStory();
+        } else {
+            nextStory();
+        }
     });
 
     function likePost(postId, element) {

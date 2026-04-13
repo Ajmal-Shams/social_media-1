@@ -125,6 +125,17 @@ def home(request):
         is_story=True, 
         created__gte=last_24h
     ).select_related('user').order_by('-created'))
+
+    # Instagram-like story rail: one bubble per user, each containing multiple stories.
+    story_groups_map = {}
+    for story in stories:
+        if story.user_id not in story_groups_map:
+            story_groups_map[story.user_id] = {
+                'user': story.user,
+                'stories': [],
+            }
+        story_groups_map[story.user_id]['stories'].append(story)
+    story_groups = list(story_groups_map.values())
     
     # Suggest users to follow
     suggestions = User.objects.exclude(id=request.user.id).exclude(
@@ -167,6 +178,7 @@ def home(request):
         "db": db,
         "own_stories": own_stories,
         "stories": stories,
+        "story_groups": story_groups,
         "suggestions": suggestions,
         "issues": issues,
         "toxic_blocked": toxic_blocked,
